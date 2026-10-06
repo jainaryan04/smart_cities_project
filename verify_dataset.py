@@ -2,7 +2,7 @@ import os
 import pandas as pd
 import numpy as np
 
-csv_path = r"C:\Users\Lenovo\Downloads\VIT Downloads\Other Downloads\Assignments\papers\export.csv"
+csv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "export.csv")
 
 print(f"Checking file: {csv_path}")
 print(f"File size: {os.path.getsize(csv_path) / (1024*1024):.2f} MB")
