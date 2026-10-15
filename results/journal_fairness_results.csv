@@ -1,0 +1,9 @@
+Model,Global ADE (m),Mean Zone ADE (m),Worst-Zone ADE (m),Worst Zone Name,Best-Zone ADE (m),Zone Disparity Gap (m),Fairness CoV (%),Personalization Recovery (%),Improvement vs FedAvg (%),Communication Overhead (MB)
+Centralized (Pooled),3.142,4.892,9.576,US-101 (Highway),2.391,7.185,67.77,100.0,25.7,937.29
+FedAvg (Global FL),3.656,6.587,14.539,US-101 (Highway),2.529,12.01,85.36,0.0,0.0,37.24
+FedProx (\mu=0.01),3.71,6.673,14.656,US-101 (Highway),2.578,12.078,84.59,0.0,-1.3,37.24
+FedPer (Personalized Heads),2.951,4.871,9.917,US-101 (Highway),1.837,8.081,73.75,100.0,26.1,36.65
+pFedMe (Moreau Envelopes),5.981,8.44,15.213,US-101 (Highway),4.623,10.59,56.9,0.0,-28.1,37.24
+Isolated (US-101 Silo),6.785,7.343,9.253,US-101 (Highway),4.999,4.254,24.02,0.0,-11.5,0.0
+Isolated (Lankershim Silo),4.266,7.115,14.966,US-101 (Highway),2.691,12.275,78.22,0.0,-8.0,0.0
+Isolated (Peachtree Silo),3.596,7.625,18.38,US-101 (Highway),1.757,16.623,99.88,0.0,-15.8,0.0

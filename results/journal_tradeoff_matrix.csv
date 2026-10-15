@@ -1,0 +1,11 @@
+Model Configuration,Global ADE (m),Worst-Zone ADE (m),Fairness CoV (%),Comm Overhead (MB),DLG Reconstruction Error (m),DLG Cosine Similarity,MIA AUC,Privacy Budget (epsilon)
+Centralized (Pooled),3.142,9.576,67.77,937.29,999.0,0.0,0.4994,N/A (No Grad Sharing)
+FedAvg (Global FL),3.656,14.539,85.36,37.24,1.086,0.551,0.4994,Infinity
+FedProx (\mu=0.01),3.71,14.656,84.59,37.24,1.086,0.551,0.4994,Infinity
+FedPer (Personalized Heads),2.951,9.917,73.75,36.65,1.306,0.634,0.4713,Infinity (Head Private)
+pFedMe (Moreau Envelopes),5.981,15.213,56.9,37.24,1.086,0.551,0.4994,Infinity
+Isolated (US-101 Silo),6.785,9.253,24.02,0.0,999.0,0.0,0.4994,N/A (No Grad Sharing)
+Isolated (Lankershim Silo),4.266,14.966,78.22,0.0,999.0,0.0,0.4994,N/A (No Grad Sharing)
+Isolated (Peachtree Silo),3.596,18.38,99.88,0.0,999.0,0.0,0.4994,N/A (No Grad Sharing)
+DP-FedAvg (sigma=0.5),3.948,15.848,89.63,37.24,6.4579,0.1942,0.424,9.69
+DP-FedAvg (sigma=1.0),4.314,17.447,93.9,37.24,7.7608,-0.0453,0.36,4.84

@@ -1,71 +1,63 @@
-# Python
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
-*.pyo
-*.pyd
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
 # Virtual environments
 .venv/
 venv/
 env/
+ENV/
 
-# Large datasets
-*.csv
-*.xlsx
-*.xls
+# Large raw datasets & binary caches
+export.csv
+cache/
+*.npz
 *.parquet
 *.zip
+*.tar.gz
 
-# Generated project files
-cache/
-plots/
-results/
-
-# IDE
-.vscode/
-.idea/
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Testing/cache
-.pytest_cache/
-.mypy_cache/# Python
-__pycache__/
-*.py[cod]
-*.pyo
-*.pyd
-
-# Virtual environments
-.venv/
-venv/
-env/
-
-# Large datasets
-*.csv
-*.xlsx
-*.xls
-*.parquet
-*.zip
-
-# Generated project files
-cache/
-plots/
-results/
-
-# IDE
-.vscode/
-.idea/
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Testing/cache
-.pytest_cache/
-.mypy_cache/
-
-# Research/reference documents
+# Research / reference PDFs and Office documents
 *.pdf
 *.docx
+*.xlsx
+*.xls
+
+# IDE & Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Operating System files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# Testing & Linting caches
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/

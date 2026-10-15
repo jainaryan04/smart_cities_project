@@ -107,7 +107,9 @@ def plot_dataset_distribution(client_data, save_path=os.path.join(PLOTS_DIR, "fi
     print(f"[Visualization] Saved dataset distribution plot: {save_path}", flush=True)
 
 
-def plot_learning_curves(fl_history, cent_history=None, fedprox_history=None, save_path=os.path.join(PLOTS_DIR, "fig2_learning_curves.png")):
+def plot_learning_curves(fl_history, cent_history=None, fedprox_history=None,
+                        fedper_history=None, pfedme_history=None,
+                        save_path=os.path.join(PLOTS_DIR, "fig2_learning_curves.png")):
     """Plots training loss and ADE convergence across communication rounds and epochs."""
     set_plot_style()
     fig, axes = plt.subplots(1, 2, figsize=(15, 5.5))
@@ -119,6 +121,12 @@ def plot_learning_curves(fl_history, cent_history=None, fedprox_history=None, sa
     
     if fedprox_history is not None:
         ax.plot(fedprox_history['rounds'], fedprox_history['train_losses'], 'v-.', color='#9467bd', label=r'FedProx ($\mu=0.01$)', linewidth=2.0)
+
+    if fedper_history is not None:
+        ax.plot(fedper_history['rounds'], fedper_history['train_losses'], '*-', color='#2ca02c', label='FedPer (Personalized)', linewidth=2.2)
+
+    if pfedme_history is not None:
+        ax.plot(pfedme_history['rounds'], pfedme_history['train_losses'], 'd--', color='#ff7f0e', label='pFedMe (Moreau Envelopes)', linewidth=2.0)
 
     if cent_history is not None:
         epochs = cent_history['epochs']
@@ -137,17 +145,23 @@ def plot_learning_curves(fl_history, cent_history=None, fedprox_history=None, sa
     if fedprox_history is not None:
         ax.plot(fedprox_history['rounds'], fedprox_history['global_ade_m'], 'v-.', color='#9467bd', label=r'FedProx ($\mu=0.01$) Global ADE', linewidth=2.2)
 
-    # Per-client breakdown under FedAvg
-    client_labels = {0: 'US-101 Highway', 1: 'Lankershim Arterial', 2: 'Peachtree Downtown'}
-    client_colors = {0: '#1f77b4', 1: '#ff7f0e', 2: '#2ca02c'}
-    for cid in sorted(fl_history['client_ade_m'].keys()):
-        lbl = client_labels.get(cid, f"Client {cid}")
-        col = client_colors.get(cid, '#1f77b4')
-        ax.plot(rounds, fl_history['client_ade_m'][cid], ':^', color=col,
-                label=f'FedAvg on {lbl}', alpha=0.7, linewidth=1.5)
+    if fedper_history is not None:
+        # For FedPer, mean client personalized ADE
+        fedper_mean_ades = []
+        for r_idx in range(len(fedper_history['rounds'])):
+            client_vals = [fedper_history['client_ade_m'][cid][r_idx] for cid in fedper_history['client_ade_m']]
+            fedper_mean_ades.append(float(np.mean(client_vals)))
+        ax.plot(fedper_history['rounds'], fedper_mean_ades, '*-', color='#2ca02c', label='FedPer Mean Personal ADE', linewidth=2.5)
+
+    if pfedme_history is not None:
+        pfedme_mean_ades = []
+        for r_idx in range(len(pfedme_history['rounds'])):
+            client_vals = [pfedme_history['client_ade_m'][cid][r_idx] for cid in pfedme_history['client_ade_m']]
+            pfedme_mean_ades.append(float(np.mean(client_vals)))
+        ax.plot(pfedme_history['rounds'], pfedme_mean_ades, 'd--', color='#ff7f0e', label='pFedMe Mean Personal ADE', linewidth=2.2)
 
     if cent_history is not None:
-        ax.plot(cent_history['epochs'], cent_history['test_ade_m'], 's--', color='#000000', label='Centralized Baseline ADE', linewidth=2.0)
+        ax.plot(cent_history['epochs'], cent_history['test_ade_m'], 's--', color='#1f77b4', label='Centralized Baseline ADE', linewidth=2.0)
 
     ax.set_xlabel('Communication Round / Epoch')
     ax.set_ylabel('Average Displacement Error (ADE in meters)')
@@ -327,3 +341,207 @@ def plot_horizon_error_growth(horizon_dict, save_path=os.path.join(PLOTS_DIR, "f
     plt.savefig(save_path, bbox_inches='tight', dpi=300)
     plt.close()
     print(f"[Visualization] Saved horizon error growth plot: {save_path}", flush=True)
+
+
+# ==============================================================================
+# JOURNAL-GRADE PUBLICATION VISUALIZATIONS
+# ==============================================================================
+
+def plot_heterogeneity_vs_personalization(controlled_df, save_path=os.path.join(PLOTS_DIR, "fig7_heterogeneity_vs_personalization.png")):
+    """
+    Plots the impact of spatial-temporal heterogeneity levels (Low, Medium, High)
+    on FedAvg vs FedPer and the escalating personalization advantage.
+    """
+    set_plot_style()
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5.5))
+
+    levels = list(controlled_df['Heterogeneity Level'])
+    x = np.arange(len(levels))
+    width = 0.35
+
+    # Panel A: Absolute Errors
+    ax = axes[0]
+    fedavg_err = list(controlled_df['FedAvg Mean Zone ADE (m)'])
+    fedper_err = list(controlled_df['FedPer Mean Personal ADE (m)'])
+
+    rects1 = ax.bar(x - width/2, fedavg_err, width, label='Canonical FedAvg (Global)', color='#d62728', edgecolor='black', alpha=0.85)
+    rects2 = ax.bar(x + width/2, fedper_err, width, label='FedPer (Personalized Heads)', color='#2ca02c', edgecolor='black', alpha=0.85)
+
+    ax.set_xticks(x)
+    ax.set_xticklabels([f"{lvl}\nNon-IID" for lvl in levels], fontweight='bold')
+    ax.set_ylabel('Mean Client Test ADE (meters)')
+    ax.set_title('(a) Degradation under Geographic Heterogeneity')
+    ax.legend(frameon=True)
+    ax.grid(True, linestyle='--', alpha=0.6)
+
+    # Panel B: Escalating Advantage
+    ax = axes[1]
+    adv = list(controlled_df['FedPer Personal Advantage (m)'])
+    bars = ax.bar(levels, adv, color='#1f77b4', edgecolor='black', width=0.45, alpha=0.85)
+
+    for bar, val in zip(bars, adv):
+        yval = bar.get_height()
+        ax.text(bar.get_x() + bar.get_width() / 2.0, yval + 0.05, f"+{val:.3f}m\n({val/fedavg_err[levels.index(bar.get_x() if isinstance(bar.get_x(), str) else 0)]*100:.1f}%)" if False else f"+{val:.3f}m",
+                ha='center', va='bottom', fontweight='bold', fontsize=11)
+
+    ax.set_xlabel('Geographic Heterogeneity Level', fontweight='bold')
+    ax.set_ylabel('Personalization Gain: FedAvg ADE - FedPer ADE (m)')
+    ax.set_title('(b) Monotonic Gain of Personalization with Non-IID Shift')
+    ax.grid(True, linestyle='--', alpha=0.6)
+
+    plt.tight_layout()
+    plt.savefig(save_path, bbox_inches='tight', dpi=300)
+    plt.close()
+    print(f"[Visualization] Saved heterogeneity vs personalization plot: {save_path}", flush=True)
+
+
+def plot_privacy_leakage_vs_dp(dlg_df, save_path=os.path.join(PLOTS_DIR, "fig8_privacy_reconstruction_vs_dp.png")):
+    """
+    Plots DLG trajectory reconstruction error and cosine similarity as a function of Differential Privacy noise.
+    """
+    set_plot_style()
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5.5))
+
+    fedavg_rows = dlg_df[dlg_df['FL Method'] == 'FedAvg']
+    fedper_rows = dlg_df[dlg_df['FL Method'] == 'FedPer']
+
+    # Panel A: Reconstruction Position Error (meters)
+    ax = axes[0]
+    ax.plot(fedavg_rows['Noise Multiplier (sigma)'], fedavg_rows['Position Error (m)'], 'o-',
+            color='#d62728', label='FedAvg (Full Gradient Exchange)', linewidth=2.5, markersize=8)
+    ax.plot(fedper_rows['Noise Multiplier (sigma)'], fedper_rows['Position Error (m)'], 's--',
+            color='#2ca02c', label='FedPer (Head Isolated + Shared Grad)', linewidth=2.5, markersize=8)
+
+    ax.axhline(y=1.5, color='gray', linestyle=':', label='Human Driver Trajectory Tolerance (1.5m)')
+    ax.set_xlabel('Differential Privacy Noise Multiplier ($\\sigma$)', fontweight='bold')
+    ax.set_ylabel('DLG Reconstruction Position Error (meters)')
+    ax.set_title('(a) Defense Efficacy against Gradient Inversion Attacks')
+    ax.legend(frameon=True)
+    ax.grid(True, linestyle='--', alpha=0.6)
+
+    # Panel B: Cosine Similarity
+    ax = axes[1]
+    ax.plot(fedavg_rows['Noise Multiplier (sigma)'], fedavg_rows['Input Cosine Similarity'], 'o-',
+            color='#d62728', label='FedAvg Gradient Leakage', linewidth=2.5, markersize=8)
+    ax.plot(fedper_rows['Noise Multiplier (sigma)'], fedper_rows['Input Cosine Similarity'], 's--',
+            color='#2ca02c', label='FedPer Gradient Leakage', linewidth=2.5, markersize=8)
+
+    ax.set_xlabel('Differential Privacy Noise Multiplier ($\\sigma$)', fontweight='bold')
+    ax.set_ylabel('Trajectory Geometry Cosine Similarity (Attacker vs GT)')
+    ax.set_title('(b) Gradient Inversion Geometric Fidelity Collapse')
+    ax.legend(frameon=True)
+    ax.grid(True, linestyle='--', alpha=0.6)
+
+    plt.tight_layout()
+    plt.savefig(save_path, bbox_inches='tight', dpi=300)
+    plt.close()
+    print(f"[Visualization] Saved privacy leakage vs DP plot: {save_path}", flush=True)
+
+
+def plot_fairness_disparity_comparison(fairness_df, save_path=os.path.join(PLOTS_DIR, "fig9_fairness_disparity_comparison.png")):
+    """
+    Plots Best-Zone, Mean-Zone, and Worst-Zone ADE alongside Disparity Gap across FL paradigms.
+    """
+    set_plot_style()
+    fig, axes = plt.subplots(1, 2, figsize=(15, 6))
+
+    # Filter to main paradigms
+    models_to_plot = ['Centralized (Pooled)', 'FedAvg (Global FL)', 'FedProx (\\mu=0.01)', 'FedPer (Personalized Heads)', 'pFedMe (Moreau Envelopes)']
+    filtered = fairness_df[fairness_df['Model'].isin(models_to_plot)].copy()
+
+    short_names = ['Centralized', 'FedAvg', 'FedProx', 'FedPer (PFL)', 'pFedMe (PFL)']
+    x = np.arange(len(short_names))
+    width = 0.25
+
+    # Panel A: Zone Performance Spread
+    ax = axes[0]
+    ax.bar(x - width, filtered['Best-Zone ADE (m)'], width, label='Best Zone (Downtown/Arterial)', color='#2ca02c', edgecolor='black', alpha=0.85)
+    ax.bar(x, filtered['Mean Zone ADE (m)'], width, label='Mean Across Zones', color='#1f77b4', edgecolor='black', alpha=0.85)
+    ax.bar(x + width, filtered['Worst-Zone ADE (m)'], width, label='Worst Zone (Highway US-101)', color='#d62728', edgecolor='black', alpha=0.85)
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(short_names, rotation=15, fontweight='bold')
+    ax.set_ylabel('Average Displacement Error (meters)')
+    ax.set_title('(a) Zone-Level Performance Disparity Across Paradigms')
+    ax.legend(frameon=True)
+    ax.grid(True, linestyle='--', alpha=0.6)
+
+    # Panel B: Disparity Gap & Fairness CoV
+    ax = axes[1]
+    gaps = list(filtered['Zone Disparity Gap (m)'])
+    covs = list(filtered['Fairness CoV (%)'])
+
+    bars = ax.bar(x, gaps, width=0.5, color='#9467bd', edgecolor='black', alpha=0.85, label='Disparity Gap (Worst - Best ADE)')
+    ax.set_xticks(x)
+    ax.set_xticklabels(short_names, rotation=15, fontweight='bold')
+    ax.set_ylabel('Disparity Gap (meters)')
+    ax.set_title('(b) Zone Disparity Gap (Lower = More Equitable)')
+
+    for bar, gap, cov in zip(bars, gaps, covs):
+        yval = bar.get_height()
+        ax.text(bar.get_x() + bar.get_width()/2.0, yval + 0.15, f"{gap:.2f}m\n(CoV: {cov:.1f}%)",
+                ha='center', va='bottom', fontsize=10, fontweight='bold')
+
+    ax.grid(True, linestyle='--', alpha=0.6)
+
+    plt.tight_layout()
+    plt.savefig(save_path, bbox_inches='tight', dpi=300)
+    plt.close()
+    print(f"[Visualization] Saved fairness disparity comparison plot: {save_path}", flush=True)
+
+
+def plot_accuracy_privacy_tradeoff_pareto(tradeoff_df, save_path=os.path.join(PLOTS_DIR, "fig10_pareto_tradeoff_frontier.png")):
+    """
+    Plots multi-objective accuracy vs privacy vs communication Pareto frontier.
+    x-axis = DLG Reconstruction Error (m) [Privacy, higher is better]
+    y-axis = Global ADE (m) [Utility, lower is better]
+    bubble size = Communication Overhead (MB)
+    """
+    set_plot_style()
+    fig, ax = plt.subplots(figsize=(11, 7))
+
+    for _, row in tradeoff_df.iterrows():
+        cfg = row['Model Configuration']
+        ade = float(row['Global ADE (m)'])
+        dlg_err = min(float(row['DLG Reconstruction Error (m)']), 12.0)  # cap for display
+        comm = float(row['Comm Overhead (MB)'])
+
+        # Style based on method
+        if 'FedPer' in cfg:
+            color = '#2ca02c'
+            marker = '*'
+            size = 350
+        elif 'Centralized' in cfg:
+            color = '#1f77b4'
+            marker = 's'
+            size = 250
+        elif 'DP-FedAvg' in cfg:
+            color = '#9467bd'
+            marker = '^'
+            size = 200
+        elif 'Isolated' in cfg:
+            color = '#7f7f7f'
+            marker = 'x'
+            size = 150
+        else:
+            color = '#d62728'
+            marker = 'o'
+            size = 220
+
+        ax.scatter(dlg_err, ade, color=color, marker=marker, s=size, edgecolors='black', linewidth=1.5, zorder=5)
+        ax.annotate(cfg, (dlg_err, ade), xytext=(8, 5), textcoords='offset points', fontsize=9, fontweight='bold')
+
+    ax.set_xlabel('Privacy Defense: DLG Trajectory Reconstruction Error (m) [Higher = More Private]', fontweight='bold')
+    ax.set_ylabel('Prediction Accuracy: Global Test ADE (m) [Lower = More Accurate]', fontweight='bold')
+    ax.set_title('Integrated Smart City Multi-Objective Pareto Frontier\n(Accuracy vs Privacy vs Communication Overhead)', fontweight='bold')
+    ax.grid(True, linestyle='--', alpha=0.6)
+
+    # Highlight optimal region
+    ax.axvspan(5.0, 12.5, ymin=0, ymax=0.45, color='green', alpha=0.1, label='Target Operating Zone (High Accuracy & High Privacy)')
+    ax.legend(frameon=True, loc='upper right')
+
+    plt.tight_layout()
+    plt.savefig(save_path, bbox_inches='tight', dpi=300)
+    plt.close()
+    print(f"[Visualization] Saved Pareto trade-off frontier plot: {save_path}", flush=True)
+

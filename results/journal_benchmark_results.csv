@@ -1,0 +1,33 @@
+Model,Evaluation Domain,ADE (m),FDE (m),RMSE (m),MAE (m),MAPE (%),ADE (ft),FDE (ft),ADE @ 1.0s (m),ADE @ 2.0s (m),ADE @ 3.0s (m),Cumulative Comm (MB)
+Centralized (Pooled),US-101 (Highway),9.576,13.38,10.951,5.498,60.72,31.417,43.897,5.98,8.066,9.576,937.29
+Centralized (Pooled),Lankershim (Arterial),2.708,4.624,5.984,1.537,33.19,8.885,15.172,1.221,1.96,2.708,937.29
+Centralized (Pooled),Peachtree (Downtown),2.391,4.068,6.064,1.304,26.93,7.844,13.346,1.125,1.727,2.391,937.29
+Centralized (Pooled),Global Pooled,3.142,5.101,6.603,1.762,32.39,10.31,16.734,1.585,2.371,3.142,937.29
+FedAvg (Global FL),US-101 (Highway),14.539,20.848,16.419,8.092,77.26,47.701,68.399,8.099,11.918,14.539,37.24
+FedAvg (Global FL),Lankershim (Arterial),2.529,4.456,5.798,1.439,27.56,8.297,14.621,1.037,1.769,2.529,37.24
+FedAvg (Global FL),Peachtree (Downtown),2.694,4.817,6.426,1.455,22.42,8.84,15.804,1.155,1.864,2.694,37.24
+FedAvg (Global FL),Global Pooled,3.656,6.063,7.617,2.025,29.25,11.995,19.893,1.71,2.699,3.656,37.24
+FedProx (\mu=0.01),US-101 (Highway),14.656,20.768,16.0,8.195,82.67,48.083,68.137,8.564,12.131,14.656,37.24
+FedProx (\mu=0.01),Lankershim (Arterial),2.786,4.663,6.092,1.572,34.92,9.14,15.3,1.311,2.044,2.786,37.24
+FedProx (\mu=0.01),Peachtree (Downtown),2.578,4.292,6.211,1.389,25.45,8.459,14.083,1.288,1.902,2.578,37.24
+FedProx (\mu=0.01),Global Pooled,3.71,5.872,7.54,2.054,34.24,12.174,19.266,1.929,2.847,3.71,37.24
+FedPer (Personalized Heads),US-101 (Highway),9.917,13.767,10.251,5.604,62.17,32.537,45.169,6.855,8.394,9.917,36.65
+FedPer (Personalized Heads),Lankershim (Arterial),2.859,4.846,5.885,1.646,39.42,9.382,15.899,1.266,2.066,2.859,36.65
+FedPer (Personalized Heads),Peachtree (Downtown),1.837,3.307,5.995,1.003,25.8,6.026,10.849,0.761,1.261,1.837,36.65
+FedPer (Personalized Heads),Global Pooled,2.951,4.835,6.436,1.662,34.45,9.68,15.864,1.494,2.205,2.951,36.65
+pFedMe (Moreau Envelopes),US-101 (Highway),15.213,19.236,13.53,8.298,67.0,49.91,63.11,9.791,13.304,15.213,37.24
+pFedMe (Moreau Envelopes),Lankershim (Arterial),4.623,7.596,7.132,2.504,38.66,15.168,24.922,2.118,3.414,4.623,37.24
+pFedMe (Moreau Envelopes),Peachtree (Downtown),5.483,9.023,8.811,2.857,36.9,17.989,29.603,2.551,4.041,5.483,37.24
+pFedMe (Moreau Envelopes),Global Pooled,5.981,9.335,8.718,3.187,40.22,19.623,30.625,3.005,4.592,5.981,37.24
+Isolated (US-101 Silo),US-101 (Highway),9.253,12.365,9.607,5.231,58.98,30.357,40.566,6.52,8.064,9.253,0.0
+Isolated (US-101 Silo),Lankershim (Arterial),4.999,8.432,7.504,2.679,67.02,16.399,27.664,2.293,3.612,4.999,0.0
+Isolated (US-101 Silo),Peachtree (Downtown),7.778,12.992,11.233,4.006,74.29,25.517,42.624,3.596,5.648,7.778,0.0
+Isolated (US-101 Silo),Global Pooled,6.785,11.099,9.75,3.578,70.03,22.262,36.415,3.325,5.037,6.785,0.0
+Isolated (Lankershim Silo),US-101 (Highway),14.966,21.451,16.42,8.375,86.07,49.1,70.377,8.295,12.238,14.966,0.0
+Isolated (Lankershim Silo),Lankershim (Arterial),2.691,4.629,5.676,1.515,35.78,8.829,15.188,1.253,1.937,2.691,0.0
+Isolated (Lankershim Silo),Peachtree (Downtown),3.69,6.345,7.621,2.02,43.59,12.105,20.818,1.734,2.649,3.69,0.0
+Isolated (Lankershim Silo),Global Pooled,4.266,6.965,8.126,2.368,44.13,13.996,22.851,2.11,3.195,4.266,0.0
+Isolated (Peachtree Silo),US-101 (Highway),18.38,26.442,19.169,10.135,108.76,60.303,86.752,9.958,14.92,18.38,0.0
+Isolated (Peachtree Silo),Lankershim (Arterial),2.738,4.627,6.528,1.556,33.74,8.982,15.18,1.215,1.987,2.738,0.0
+Isolated (Peachtree Silo),Peachtree (Downtown),1.757,3.009,5.877,0.958,21.34,5.765,9.873,0.801,1.26,1.757,0.0
+Isolated (Peachtree Silo),Global Pooled,3.596,5.696,8.167,1.996,33.93,11.796,18.687,1.763,2.739,3.596,0.0
