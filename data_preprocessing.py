@@ -19,10 +19,46 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset, DataLoader
 from config import (
-    DATA_CSV, CACHE_DIR, OBS_STEPS, PRED_STEPS, TOTAL_STEPS,
+    DATA_CSV, CACHE_DIR, OUTPUT_DIR, OBS_STEPS, PRED_STEPS, TOTAL_STEPS,
     DOWNSAMPLE_STEP, STRIDE, RANDOM_SEED, BATCH_SIZE, MAX_VEHICLES_PER_LOC,
-    MAX_RAW_ROWS
+    MAX_RAW_ROWS, NATIVE_FRAME_MS, MAX_FRAME_JUMP_FT
 )
+
+
+def assemble_tracks(loc_df, time_col=None):
+    """
+    Splits one location's rows into physically contiguous 10 Hz tracks.
+
+    NGSIM Vehicle_IDs are reused across recording periods, and the raw export can
+    have missing frames, so grouping by Vehicle_ID alone can join different vehicles
+    into one track. A new track starts whenever the next row of the same Vehicle_ID
+    is not the next 10 Hz frame (Frame_ID step != 1, or Global_Time step !=
+    NATIVE_FRAME_MS when available) or jumps more than MAX_FRAME_JUMP_FT.
+
+    Returns ([(vehicle_id, track_df), ...], stats_dict).
+    """
+    order_col = time_col if time_col else 'Frame_ID'
+    df = loc_df.sort_values(['Vehicle_ID', order_col, 'Frame_ID'], kind='mergesort')
+    n_before = len(df)
+    df = df.drop_duplicates(subset=['Vehicle_ID', order_col])
+    duplicates = n_before - len(df)
+
+    same_vid = df['Vehicle_ID'].eq(df['Vehicle_ID'].shift())
+    step_ok = df['Frame_ID'].diff().eq(1)
+    if time_col:
+        step_ok &= df[time_col].diff().eq(NATIVE_FRAME_MS)
+    jump = np.hypot(df['Local_X'].diff(), df['Local_Y'].diff())
+    jump_ok = jump.le(MAX_FRAME_JUMP_FT)
+
+    frame_breaks = int((same_vid & ~step_ok).sum())
+    jump_breaks = int((same_vid & step_ok & ~jump_ok).sum())
+    new_track = ~(same_vid & step_ok & jump_ok)
+    track_ids = new_track.cumsum()
+
+    tracks = [(vid_track[0], g) for vid_track, g in df.groupby([df['Vehicle_ID'], track_ids], sort=False)]
+    stats = {'rows': int(len(df)), 'tracks': len(tracks), 'frame_breaks': frame_breaks,
+             'jump_breaks': jump_breaks, 'duplicates': int(duplicates)}
+    return tracks, stats
 
 class TrajectoryDataset(Dataset):
     """PyTorch Dataset for Vehicle Trajectory Sequences."""
@@ -45,27 +81,36 @@ class NGSIMPreprocessor:
     def __init__(self, csv_path=DATA_CSV, cache_dir=CACHE_DIR):
         self.csv_path = csv_path
         self.cache_dir = cache_dir
-        self.cache_file = os.path.join(cache_dir, "federated_trajectory_data.npz")
+        # v2: contiguous-track assembly. Horizon lengths are part of the name so caches never mix.
+        self.cache_file = os.path.join(cache_dir, f"federated_trajectory_data_v2_obs{OBS_STEPS}_pred{PRED_STEPS}.npz")
         self.scalers = {}
 
     def extract_sequences_from_csv(self, max_vehicles_per_loc=MAX_VEHICLES_PER_LOC, max_raw_rows=MAX_RAW_ROWS):
         """
         Reads CSV, sanitizes columns, extracts trajectories from a 1 Million row slice,
-        downsamples, and generates sliding window observation/prediction pairs.
+        assembles contiguous tracks, downsamples, and generates sliding window
+        observation/prediction pairs.
         """
         print(f"[Preprocessor] Reading raw data from {self.csv_path} (limit: {max_raw_rows:,} rows)...", flush=True)
         t0 = time.time()
-        
-        cols = ['Vehicle_ID', 'Frame_ID', 'Local_X', 'Local_Y', 'v_Vel', 'v_Acc', 'Location']
+
+        header = pd.read_csv(self.csv_path, nrows=0).columns
+        time_col = 'Global_Time' if 'Global_Time' in header else None
+        if time_col is None:
+            print("[Preprocessor] WARNING: no Global_Time column; recording periods are separated "
+                  "only by Frame_ID gaps and position jumps.", flush=True)
+
+        num_cols = ['Vehicle_ID', 'Frame_ID', 'Local_X', 'Local_Y', 'v_Vel', 'v_Acc'] + ([time_col] if time_col else [])
+        cols = num_cols + ['Location']
         loc_chunks = {'us-101': [], 'lankershim': [], 'peachtree': []}
         loc_counts = {'us-101': 0, 'lankershim': 0, 'peachtree': 0}
         target_per_loc = max_raw_rows // 3  # Balanced slice across 3 Smart City RSU domains
         
         for chunk in pd.read_csv(self.csv_path, usecols=cols, chunksize=500_000, low_memory=False):
-            for col in ['Vehicle_ID', 'Frame_ID', 'Local_X', 'Local_Y', 'v_Vel', 'v_Acc']:
+            for col in num_cols:
                 if chunk[col].dtype == object:
                     chunk[col] = pd.to_numeric(chunk[col].astype(str).str.replace(',', ''), errors='coerce')
-            chunk = chunk.dropna(subset=['Vehicle_ID', 'Frame_ID', 'Local_X', 'Local_Y', 'v_Vel', 'v_Acc', 'Location'])
+            chunk = chunk.dropna(subset=cols)
             chunk['Location'] = chunk['Location'].astype(str).str.strip().str.lower()
 
             for loc_key in loc_chunks:
@@ -96,6 +141,7 @@ class NGSIMPreprocessor:
         }
 
         client_data = {}
+        split_rows = []
         for loc_name in loc_order:
             if loc_name not in df['Location'].values:
                 continue
@@ -108,26 +154,37 @@ class NGSIMPreprocessor:
             if max_vehicles_per_loc and len(unique_vids) > max_vehicles_per_loc:
                 unique_vids = unique_vids[:max_vehicles_per_loc]
 
-            print(f"[Preprocessor] Processing Location '{loc_name}' (Client {cid}) with {len(unique_vids)} vehicles...", flush=True)
+            print(f"[Preprocessor] Processing Location '{loc_name}' (Client {cid}) with {len(unique_vids)} vehicle IDs...", flush=True)
             
             n_v = len(unique_vids)
             n_train = int(0.70 * n_v)
             n_val = int(0.15 * n_v)
             
+            # Splits are made by Vehicle_ID, so every track carrying the same ID
+            # (even from different recording periods) stays in one split.
             train_vids = set(unique_vids[:n_train])
             val_vids = set(unique_vids[n_train:n_train+n_val])
             test_vids = set(unique_vids[n_train+n_val:])
+            for vid in unique_vids:
+                split_rows.append({'Location': loc_name, 'Vehicle_ID': int(vid),
+                                   'Split': 'train' if vid in train_vids else ('val' if vid in val_vids else 'test')})
+
+            sel_df = loc_df[loc_df['Vehicle_ID'].isin(set(unique_vids))]
+            tracks, track_stats = assemble_tracks(sel_df, time_col=time_col)
+            print(f"  -> {track_stats['rows']:,} rows -> {track_stats['tracks']:,} contiguous tracks "
+                  f"({track_stats['frame_breaks']:,} frame/time breaks, {track_stats['jump_breaks']:,} position-jump breaks, "
+                  f"{track_stats['duplicates']:,} duplicate frames dropped)", flush=True)
 
             splits = {'train': ([], []), 'val': ([], []), 'test': ([], [])}
 
-            for vid in unique_vids:
-                v_df = loc_df[loc_df['Vehicle_ID'] == vid].drop_duplicates(subset=['Frame_ID']).sort_values('Frame_ID')
-                v_df = v_df.iloc[::DOWNSAMPLE_STEP]
+            for vid, track in tracks:
+                # Downsample within a contiguous track only, so consecutive samples are 0.5 s apart
+                track = track.iloc[::DOWNSAMPLE_STEP]
                 
-                if len(v_df) < TOTAL_STEPS:
+                if len(track) < TOTAL_STEPS:
                     continue
 
-                coords = v_df[['Local_X', 'Local_Y', 'v_Vel', 'v_Acc']].values.astype(np.float32)
+                coords = track[['Local_X', 'Local_Y', 'v_Vel', 'v_Acc']].values.astype(np.float32)
                 
                 if vid in train_vids:
                     split_key = 'train'
@@ -153,15 +210,20 @@ class NGSIMPreprocessor:
 
             client_data[cid] = {
                 'name': loc_name,
-                'train_x': np.array(splits['train'][0], dtype=np.float32),
-                'train_y': np.array(splits['train'][1], dtype=np.float32),
-                'val_x': np.array(splits['val'][0], dtype=np.float32),
-                'val_y': np.array(splits['val'][1], dtype=np.float32),
-                'test_x': np.array(splits['test'][0], dtype=np.float32),
-                'test_y': np.array(splits['test'][1], dtype=np.float32),
+                'train_x': np.array(splits['train'][0], dtype=np.float32).reshape(-1, OBS_STEPS, 4),
+                'train_y': np.array(splits['train'][1], dtype=np.float32).reshape(-1, PRED_STEPS, 2),
+                'val_x': np.array(splits['val'][0], dtype=np.float32).reshape(-1, OBS_STEPS, 4),
+                'val_y': np.array(splits['val'][1], dtype=np.float32).reshape(-1, PRED_STEPS, 2),
+                'test_x': np.array(splits['test'][0], dtype=np.float32).reshape(-1, OBS_STEPS, 4),
+                'test_y': np.array(splits['test'][1], dtype=np.float32).reshape(-1, PRED_STEPS, 2),
+                'raw_rows': np.array(track_stats['rows']),
             }
             print(f"  -> Client {cid} ({loc_name}): Train={len(client_data[cid]['train_x'])}, "
                   f"Val={len(client_data[cid]['val_x'])}, Test={len(client_data[cid]['test_x'])}", flush=True)
+
+        split_path = os.path.join(OUTPUT_DIR, "data_split_vehicle_ids.csv")
+        pd.DataFrame(split_rows).to_csv(split_path, index=False)
+        print(f"[Preprocessor] Vehicle-level split written to {split_path}", flush=True)
 
         return client_data
 
@@ -205,7 +267,8 @@ class NGSIMPreprocessor:
                 'test_y': (client_data[cid]['test_y'] - y_mean) / y_std,
                 'raw_train_y': client_data[cid]['train_y'],
                 'raw_val_y': client_data[cid]['val_y'],
-                'raw_test_y': client_data[cid]['test_y']
+                'raw_test_y': client_data[cid]['test_y'],
+                'raw_rows': client_data[cid].get('raw_rows', np.array(0))
             }
 
         return normalized_data
@@ -255,6 +318,7 @@ class NGSIMPreprocessor:
                 'raw_train_y': data[f"client_{cid}_raw_train_y"],
                 'raw_val_y': data[f"client_{cid}_raw_val_y"],
                 'raw_test_y': data[f"client_{cid}_raw_test_y"],
+                'raw_rows': data[f"client_{cid}_raw_rows"] if f"client_{cid}_raw_rows" in data else np.array(0),
             }
         print(f"[Preprocessor] Successfully loaded cached data for {num_clients} clients.", flush=True)
         return normalized_data

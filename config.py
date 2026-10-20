@@ -23,12 +23,21 @@ RANDOM_SEED = 42
 
 # Trajectory & Sequence Parameters
 # NGSIM is 10 Hz. Downsampling by 5 gives 2 Hz (0.5s per frame).
-# 6 frames = 3.0 seconds history; 6 frames = 3.0 seconds future prediction.
-MAX_RAW_ROWS = 1_000_000  # Explicitly trimmed to 1 Million rows as requested
+# Default: 6 frames = 3.0 s history, 6 frames = 3.0 s future. The common NGSIM
+# convention (3 s history, 5 s horizon) is NGSIM_PRED_STEPS=10.
+MAX_RAW_ROWS = 1_000_000  # Rows read in file order, split evenly over the 3 locations
 DOWNSAMPLE_STEP = 5
-OBS_STEPS = 6       # 3.0 seconds observation horizon
-PRED_STEPS = 6      # 3.0 seconds prediction horizon
+OBS_STEPS = int(os.environ.get("NGSIM_OBS_STEPS", 6))
+PRED_STEPS = int(os.environ.get("NGSIM_PRED_STEPS", 6))
 TOTAL_STEPS = OBS_STEPS + PRED_STEPS
+SAMPLE_DT_S = 0.1 * DOWNSAMPLE_STEP  # seconds between downsampled samples
+
+# Track assembly. NGSIM Vehicle_IDs are only unique within one recording period,
+# so a track is split wherever consecutive rows are not consecutive 10 Hz frames
+# (Frame_ID step != 1, or Global_Time step != 100 ms when that column exists) or
+# imply a physically impossible jump between frames.
+NATIVE_FRAME_MS = 100
+MAX_FRAME_JUMP_FT = 15.0  # 15 ft in 0.1 s = 150 ft/s (~165 km/h)
 STRIDE = 3          # Sliding window stride
 MAX_VEHICLES_PER_LOC = 600  # Balanced representative vehicle sampling per domain
 
@@ -52,12 +61,16 @@ CLIENT_NAMES = {
     1: "RSU-2_Lankershim_Arterial",
     2: "RSU-3_Peachtree_Downtown"
 }
-COMMUNICATION_ROUNDS = 8
+COMMUNICATION_ROUNDS = 12
 LOCAL_EPOCHS = 1
 FEDPROX_MU = 0.01
 
-# Centralized Training Configuration
-CENTRALIZED_EPOCHS = 6
+# Centralized / isolated training: same number of passes over the data as each
+# federated client (rounds x local epochs), so budgets are equal.
+CENTRALIZED_EPOCHS = COMMUNICATION_ROUNDS * LOCAL_EPOCHS
+
+# Seeds for repeated runs (mean +/- SD and paired tests)
+DEFAULT_SEEDS = [42, 43, 44, 45, 46]
 
 # Evaluation & Unit conversion
 FEET_TO_METERS = 0.3048  # NGSIM raw coordinates are in feet

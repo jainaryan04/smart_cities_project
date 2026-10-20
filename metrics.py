@@ -8,7 +8,8 @@ Metrics implemented:
 - Mean Absolute Percentage Error (MAPE)
 - Zone Fairness Metrics
 - Personalization Recovery Rate
-- Horizon-specific ADE breakdown (e.g., at 1.0s, 2.0s, 3.0s)
+- Horizon-specific errors: cumulative ADE up to t (ADE_t) and point error at t (FDE_t)
+- Scale-normalized ADE (ADE divided by ground-truth path length)
 - Unscaling utilities from normalized space to physical real-world coordinates
 """
 
@@ -83,7 +84,8 @@ def compute_rmse(pred_coords, gt_coords):
 
 def compute_horizon_ades(pred_coords, gt_coords, fps=2):
     """
-    Computes cumulative ADE at each second mark (e.g. 1.0s, 2.0s, 3.0s).
+    For every prediction step t: ADE_t is the cumulative mean error over steps 1..t,
+    FDE_t is the point error at step t (the usual "RMSE/error at t seconds").
     """
     if isinstance(pred_coords, torch.Tensor):
         pred_coords = pred_coords.detach().cpu().numpy()
@@ -100,6 +102,28 @@ def compute_horizon_ades(pred_coords, gt_coords, fps=2):
         horizon_results[f"FDE_{sec:.1f}s"] = float(np.mean(disp[:, step-1]))
     
     return horizon_results
+
+
+def compute_scale_normalized_ade(pred_coords, gt_coords, min_path=1.0):
+    """
+    Scale-normalized ADE: per-window ADE divided by the ground-truth path length over
+    the prediction horizon, averaged over windows whose path is at least min_path
+    (same units as the coordinates). Makes errors comparable across zones whose
+    vehicles move at very different speeds.
+    Returns (mean ratio, number of windows used).
+    """
+    if isinstance(pred_coords, torch.Tensor):
+        pred_coords = pred_coords.detach().cpu().numpy()
+    if isinstance(gt_coords, torch.Tensor):
+        gt_coords = gt_coords.detach().cpu().numpy()
+
+    per_window_ade = np.linalg.norm(pred_coords - gt_coords, axis=-1).mean(axis=1)
+    origin = np.zeros_like(gt_coords[:, :1, :])
+    path = np.linalg.norm(np.diff(np.concatenate([origin, gt_coords], axis=1), axis=1), axis=-1).sum(axis=1)
+    keep = path >= min_path
+    if not np.any(keep):
+        return float('nan'), 0
+    return float(np.mean(per_window_ade[keep] / path[keep])), int(keep.sum())
 
 
 def compute_mae(pred_coords, gt_coords):
@@ -234,7 +258,14 @@ def evaluate_model_on_loader(model, dataloader, scalers, device="cpu"):
 
     preds_norm = np.concatenate(all_preds_norm, axis=0)
     gts_raw_feet = np.concatenate(all_gts_raw, axis=0)
+    return compute_metrics_from_predictions(preds_norm, gts_raw_feet, scalers)
 
+
+def compute_metrics_from_predictions(preds_norm, gts_raw_feet, scalers):
+    """
+    Computes all metrics from normalized predictions and raw (feet) ground truth,
+    both in Feet (dataset native) and Meters (SI benchmark standard).
+    """
     # Convert predictions back to feet
     preds_raw_feet = unscale_coordinates(preds_norm, scalers['y_mean'], scalers['y_std'])
     
@@ -254,6 +285,8 @@ def evaluate_model_on_loader(model, dataloader, scalers, device="cpu"):
     rmse_feet = compute_rmse(preds_raw_feet, gts_raw_feet)
 
     horizon_metrics = compute_horizon_ades(preds_raw_meters, gts_raw_meters)
+    sn_ade, sn_count = compute_scale_normalized_ade(preds_raw_meters, gts_raw_meters)
+    per_window_ade = np.linalg.norm(preds_raw_meters - gts_raw_meters, axis=-1).mean(axis=1)
 
     return {
         'ADE_m': ade_meters,
@@ -265,6 +298,9 @@ def evaluate_model_on_loader(model, dataloader, scalers, device="cpu"):
         'FDE_ft': fde_feet,
         'RMSE_ft': rmse_feet,
         'horizons_m': horizon_metrics,
+        'SNADE': sn_ade,
+        'SNADE_n': sn_count,
+        'per_window_ade_m': per_window_ade,
         'preds_raw_meters': preds_raw_meters,
         'gts_raw_meters': gts_raw_meters
     }

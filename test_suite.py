@@ -7,6 +7,7 @@ Tests:
 4. Federated Averaging (FedAvg) aggregation arithmetic
 5. Trajectory metrics calculation accuracy (ADE, FDE, RMSE)
 6. Coordinate unscaling and unit transformation
+7. Track assembly, kinematic baselines and the DP accountant
 """
 
 import unittest
@@ -606,6 +607,53 @@ class TestTrajectoryPredictionSuite(unittest.TestCase):
         eval_gen = client.evaluate(split='test')
         eval_pers = client.evaluate_personalized(split='test')
         self.assertEqual(eval_gen['ADE_m'], eval_pers['ADE_m'])
+
+
+class TestPipelineFixes(unittest.TestCase):
+    def test_assemble_tracks_splits_reused_ids_and_gaps(self):
+        """A reused Vehicle_ID in a later period and a frame gap must each start a new track."""
+        import pandas as pd
+        from data_preprocessing import assemble_tracks
+        frames = list(range(0, 20)) + list(range(25, 40)) + list(range(5000, 5030))
+        df = pd.DataFrame({'Vehicle_ID': 7, 'Frame_ID': frames,
+                           'Local_X': 0.0, 'Local_Y': [f * 5.0 for f in range(len(frames))],
+                           'v_Vel': 50.0, 'v_Acc': 0.0})
+        tracks, stats = assemble_tracks(df)
+        self.assertEqual([len(t) for _, t in tracks], [20, 15, 30])
+        self.assertEqual(stats['frame_breaks'], 2)
+
+    def test_assemble_tracks_splits_position_jumps(self):
+        import pandas as pd
+        from data_preprocessing import assemble_tracks
+        y = [i * 5.0 for i in range(10)] + [500.0 + i * 5.0 for i in range(10)]
+        df = pd.DataFrame({'Vehicle_ID': 1, 'Frame_ID': range(20), 'Local_X': 0.0, 'Local_Y': y,
+                           'v_Vel': 50.0, 'v_Acc': 0.0})
+        tracks, stats = assemble_tracks(df)
+        self.assertEqual(len(tracks), 2)
+        self.assertEqual(stats['jump_breaks'], 1)
+
+    def test_constant_velocity_and_acceleration_exact(self):
+        """CV is exact on constant-velocity motion; CA is exact on constant acceleration."""
+        from baselines import KinematicExtrapolation
+        from config import SAMPLE_DT_S
+        scalers = {'x_mean': np.zeros(INPUT_DIM), 'x_std': np.ones(INPUT_DIM),
+                   'y_mean': np.zeros(OUTPUT_DIM), 'y_std': np.ones(OUTPUT_DIM)}
+        t_obs = np.arange(-(OBS_STEPS - 1), 1) * SAMPLE_DT_S
+        t_pred = np.arange(1, PRED_STEPS + 1) * SAMPLE_DT_S
+        for mode, f in [('cv', lambda t: 3.0 * t), ('ca', lambda t: 3.0 * t + 0.5 * 2.0 * t ** 2)]:
+            x = np.zeros((1, OBS_STEPS, INPUT_DIM), dtype=np.float32)
+            x[0, :, 1] = f(t_obs)
+            out = KinematicExtrapolation(scalers, mode=mode)(torch.tensor(x)).detach().numpy()
+            np.testing.assert_allclose(out[0, :, 1], f(t_pred), atol=1e-4)
+            np.testing.assert_allclose(out[0, :, 0], 0.0, atol=1e-6)
+
+    def test_rdp_accountant(self):
+        """Epsilon grows with steps, shrinks with noise, and is infinite without noise."""
+        from dp_training import compute_epsilon
+        e1 = compute_epsilon(0.1, 1.0, 100)
+        self.assertLess(e1, compute_epsilon(0.1, 1.0, 400))
+        self.assertGreater(e1, compute_epsilon(0.1, 2.0, 100))
+        self.assertEqual(compute_epsilon(0.1, 0.0, 100), float('inf'))
 
 
 if __name__ == '__main__':

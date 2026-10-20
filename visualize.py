@@ -11,6 +11,7 @@ Generates publication-quality charts for Review 1:
 
 import os
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.use('Agg')  # Non-interactive backend for headless plotting
@@ -405,17 +406,16 @@ def plot_privacy_leakage_vs_dp(dlg_df, save_path=os.path.join(PLOTS_DIR, "fig8_p
     fedavg_rows = dlg_df[dlg_df['FL Method'] == 'FedAvg']
     fedper_rows = dlg_df[dlg_df['FL Method'] == 'FedPer']
 
-    # Panel A: Reconstruction Position Error (meters)
+    # Panel A: Reconstruction position error (standardized input units)
     ax = axes[0]
-    ax.plot(fedavg_rows['Noise Multiplier (sigma)'], fedavg_rows['Position Error (m)'], 'o-',
-            color='#d62728', label='FedAvg (Full Gradient Exchange)', linewidth=2.5, markersize=8)
-    ax.plot(fedper_rows['Noise Multiplier (sigma)'], fedper_rows['Position Error (m)'], 's--',
-            color='#2ca02c', label='FedPer (Head Isolated + Shared Grad)', linewidth=2.5, markersize=8)
+    ax.plot(fedavg_rows['Noise Multiplier (sigma)'], fedavg_rows['Position Error (std units)'], 'o-',
+            color='#d62728', label='FedAvg (all gradients)', linewidth=2.5, markersize=8)
+    ax.plot(fedper_rows['Noise Multiplier (sigma)'], fedper_rows['Position Error (std units)'], 's--',
+            color='#2ca02c', label='FedPer (head gradients withheld)', linewidth=2.5, markersize=8)
 
-    ax.axhline(y=1.5, color='gray', linestyle=':', label='Human Driver Trajectory Tolerance (1.5m)')
-    ax.set_xlabel('Differential Privacy Noise Multiplier ($\\sigma$)', fontweight='bold')
-    ax.set_ylabel('DLG Reconstruction Position Error (meters)')
-    ax.set_title('(a) Defense Efficacy against Gradient Inversion Attacks')
+    ax.set_xlabel('Gradient noise multiplier $\\sigma$ (clipped, one-shot; not DP training)', fontweight='bold')
+    ax.set_ylabel('DLG position error (standardized units)')
+    ax.set_title('(a) Reconstruction error vs. gradient noise')
     ax.legend(frameon=True)
     ax.grid(True, linestyle='--', alpha=0.6)
 
@@ -426,9 +426,9 @@ def plot_privacy_leakage_vs_dp(dlg_df, save_path=os.path.join(PLOTS_DIR, "fig8_p
     ax.plot(fedper_rows['Noise Multiplier (sigma)'], fedper_rows['Input Cosine Similarity'], 's--',
             color='#2ca02c', label='FedPer Gradient Leakage', linewidth=2.5, markersize=8)
 
-    ax.set_xlabel('Differential Privacy Noise Multiplier ($\\sigma$)', fontweight='bold')
-    ax.set_ylabel('Trajectory Geometry Cosine Similarity (Attacker vs GT)')
-    ax.set_title('(b) Gradient Inversion Geometric Fidelity Collapse')
+    ax.set_xlabel('Gradient noise multiplier $\\sigma$', fontweight='bold')
+    ax.set_ylabel('Input cosine similarity (reconstruction vs. original)')
+    ax.set_title('(b) Reconstruction similarity vs. gradient noise')
     ax.legend(frameon=True)
     ax.grid(True, linestyle='--', alpha=0.6)
 
@@ -446,24 +446,30 @@ def plot_fairness_disparity_comparison(fairness_df, save_path=os.path.join(PLOTS
     fig, axes = plt.subplots(1, 2, figsize=(15, 6))
 
     # Filter to main paradigms
-    models_to_plot = ['Centralized (Pooled)', 'FedAvg (Global FL)', 'FedProx (\\mu=0.01)', 'FedPer (Personalized Heads)', 'pFedMe (Moreau Envelopes)']
-    filtered = fairness_df[fairness_df['Model'].isin(models_to_plot)].copy()
-
-    short_names = ['Centralized', 'FedAvg', 'FedProx', 'FedPer (PFL)', 'pFedMe (PFL)']
+    prefixes = [('Centralized (Pooled)', 'Centralized'), ('FedAvg', 'FedAvg'), ('FedProx', 'FedProx'),
+                ('FedPer', 'FedPer (PFL)'), ('pFedMe', 'pFedMe (PFL)'), ('Isolated (own zone)', 'Own-zone silos')]
+    rows, short_names = [], []
+    for pre, short in prefixes:
+        match = fairness_df[fairness_df['Model'].str.startswith(pre)]
+        if len(match):
+            rows.append(match.iloc[0])
+            short_names.append(short)
+    filtered = pd.DataFrame(rows)
     x = np.arange(len(short_names))
     width = 0.25
 
     # Panel A: Zone Performance Spread
     ax = axes[0]
-    ax.bar(x - width, filtered['Best-Zone ADE (m)'], width, label='Best Zone (Downtown/Arterial)', color='#2ca02c', edgecolor='black', alpha=0.85)
+    ax.bar(x - width, filtered['Best-Zone ADE (m)'], width, label='Best zone', color='#2ca02c', edgecolor='black', alpha=0.85)
     ax.bar(x, filtered['Mean Zone ADE (m)'], width, label='Mean Across Zones', color='#1f77b4', edgecolor='black', alpha=0.85)
-    ax.bar(x + width, filtered['Worst-Zone ADE (m)'], width, label='Worst Zone (Highway US-101)', color='#d62728', edgecolor='black', alpha=0.85)
+    ax.bar(x + width, filtered['Worst-Zone ADE (m)'], width, label='Worst zone', color='#d62728', edgecolor='black', alpha=0.85)
 
     ax.set_xticks(x)
     ax.set_xticklabels(short_names, rotation=15, fontweight='bold')
     ax.set_ylabel('Average Displacement Error (meters)')
     ax.set_title('(a) Zone-Level Performance Disparity Across Paradigms')
-    ax.legend(frameon=True)
+    ax.set_ylim(0, filtered['Worst-Zone ADE (m)'].max() * 1.25)
+    ax.legend(frameon=True, loc='upper left', ncol=3)
     ax.grid(True, linestyle='--', alpha=0.6)
 
     # Panel B: Disparity Gap & Fairness CoV
@@ -476,6 +482,7 @@ def plot_fairness_disparity_comparison(fairness_df, save_path=os.path.join(PLOTS
     ax.set_xticklabels(short_names, rotation=15, fontweight='bold')
     ax.set_ylabel('Disparity Gap (meters)')
     ax.set_title('(b) Zone Disparity Gap (Lower = More Equitable)')
+    ax.set_ylim(0, max(gaps) * 1.25)
 
     for bar, gap, cov in zip(bars, gaps, covs):
         yval = bar.get_height()
@@ -490,58 +497,30 @@ def plot_fairness_disparity_comparison(fairness_df, save_path=os.path.join(PLOTS
     print(f"[Visualization] Saved fairness disparity comparison plot: {save_path}", flush=True)
 
 
-def plot_accuracy_privacy_tradeoff_pareto(tradeoff_df, save_path=os.path.join(PLOTS_DIR, "fig10_pareto_tradeoff_frontier.png")):
+def plot_accuracy_privacy_tradeoff_pareto(tradeoff_df, save_path=os.path.join(PLOTS_DIR, "fig10_accuracy_communication.png")):
     """
-    Plots multi-objective accuracy vs privacy vs communication Pareto frontier.
-    x-axis = DLG Reconstruction Error (m) [Privacy, higher is better]
-    y-axis = Global ADE (m) [Utility, lower is better]
-    bubble size = Communication Overhead (MB)
+    Plots pooled test ADE against communication for every configuration with measured values.
+    Rows whose values were not measured (NaN) are skipped.
     """
     set_plot_style()
-    fig, ax = plt.subplots(figsize=(11, 7))
+    fig, ax = plt.subplots(figsize=(10, 6.5))
+    df = tradeoff_df.copy()
+    df['Global ADE (m)'] = pd.to_numeric(df['Global ADE (m)'], errors='coerce')
+    df['Comm Overhead (MB)'] = pd.to_numeric(df['Comm Overhead (MB)'], errors='coerce')
+    df = df.dropna(subset=['Global ADE (m)', 'Comm Overhead (MB)'])
 
-    for _, row in tradeoff_df.iterrows():
-        cfg = row['Model Configuration']
-        ade = float(row['Global ADE (m)'])
-        dlg_err = min(float(row['DLG Reconstruction Error (m)']), 12.0)  # cap for display
-        comm = float(row['Comm Overhead (MB)'])
+    for _, row in df.iterrows():
+        ax.scatter(row['Comm Overhead (MB)'], row['Global ADE (m)'], s=90, edgecolors='black', zorder=5)
+        ax.annotate(row['Model Configuration'], (row['Comm Overhead (MB)'], row['Global ADE (m)']),
+                    xytext=(6, 4), textcoords='offset points', fontsize=9)
 
-        # Style based on method
-        if 'FedPer' in cfg:
-            color = '#2ca02c'
-            marker = '*'
-            size = 350
-        elif 'Centralized' in cfg:
-            color = '#1f77b4'
-            marker = 's'
-            size = 250
-        elif 'DP-FedAvg' in cfg:
-            color = '#9467bd'
-            marker = '^'
-            size = 200
-        elif 'Isolated' in cfg:
-            color = '#7f7f7f'
-            marker = 'x'
-            size = 150
-        else:
-            color = '#d62728'
-            marker = 'o'
-            size = 220
-
-        ax.scatter(dlg_err, ade, color=color, marker=marker, s=size, edgecolors='black', linewidth=1.5, zorder=5)
-        ax.annotate(cfg, (dlg_err, ade), xytext=(8, 5), textcoords='offset points', fontsize=9, fontweight='bold')
-
-    ax.set_xlabel('Privacy Defense: DLG Trajectory Reconstruction Error (m) [Higher = More Private]', fontweight='bold')
-    ax.set_ylabel('Prediction Accuracy: Global Test ADE (m) [Lower = More Accurate]', fontweight='bold')
-    ax.set_title('Integrated Smart City Multi-Objective Pareto Frontier\n(Accuracy vs Privacy vs Communication Overhead)', fontweight='bold')
+    ax.set_xscale('symlog', linthresh=1.0)
+    ax.set_xlabel('Communication (MB, symlog scale)', fontweight='bold')
+    ax.set_ylabel('Pooled test ADE (m)', fontweight='bold')
+    ax.set_title('Accuracy vs. communication (measured configurations)')
     ax.grid(True, linestyle='--', alpha=0.6)
-
-    # Highlight optimal region
-    ax.axvspan(5.0, 12.5, ymin=0, ymax=0.45, color='green', alpha=0.1, label='Target Operating Zone (High Accuracy & High Privacy)')
-    ax.legend(frameon=True, loc='upper right')
 
     plt.tight_layout()
     plt.savefig(save_path, bbox_inches='tight', dpi=300)
     plt.close()
-    print(f"[Visualization] Saved Pareto trade-off frontier plot: {save_path}", flush=True)
-
+    print(f"[Visualization] Saved accuracy-communication plot: {save_path}", flush=True)

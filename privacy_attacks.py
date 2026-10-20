@@ -4,7 +4,8 @@ Implements:
 1. Deep Leakage from Gradients (DLG) — Trajectory Reconstruction Attack
 2. Improved DLG (iDLG) — Enhanced with analytical label/target initialization
 3. Membership Inference Attack (MIA)
-4. Differential Privacy Defense (DP-SGD style gradient noise)
+4. Gradient clipping + Gaussian noise on observed gradients (one-shot perturbation;
+   DP-SGD training with an accountant is in dp_training.py)
 5. Privacy evaluation utilities
 """
 
@@ -63,9 +64,10 @@ class GradientReconstructionAttack:
         return [g.detach().clone() for g in gradients]
 
     def reconstruct(self, target_gradients, num_iterations=300, lr=0.1, 
-                    tv_weight=1e-4, verbose=False, shared_only=False):
+                    tv_weight=1e-4, verbose=False, shared_only=False, batch_size=1):
         """
         Attempts to reconstruct the input trajectory and target from observed gradients.
+        batch_size: number of windows behind the observed (batch-averaged) gradient.
         
         target_gradients: list of gradient tensors (the 'leaked' gradients)
         num_iterations: optimization iterations
@@ -81,8 +83,8 @@ class GradientReconstructionAttack:
         target_gradients = [tg.to(self.device) for tg in target_gradients]
 
         # Initialize dummy data
-        dummy_input = torch.randn(1, OBS_STEPS, INPUT_DIM, device=self.device, requires_grad=True)
-        dummy_target = torch.randn(1, PRED_STEPS, OUTPUT_DIM, device=self.device, requires_grad=True)
+        dummy_input = torch.randn(batch_size, OBS_STEPS, INPUT_DIM, device=self.device, requires_grad=True)
+        dummy_target = torch.randn(batch_size, PRED_STEPS, OUTPUT_DIM, device=self.device, requires_grad=True)
 
         optimizer = optim.Adam([dummy_input, dummy_target], lr=lr)
         scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_iterations)
@@ -140,7 +142,8 @@ class GradientReconstructionAttack:
           - target_mse: MSE between original and reconstructed targets
           - input_cosine_sim: cosine similarity of flattened input vectors
           - target_cosine_sim: cosine similarity of flattened target vectors
-          - position_error: average Euclidean distance of position coordinates (first 2 dims of input)
+          - position_error: average Euclidean distance of position coordinates (first 2 dims of
+            input), in standardized units
           - endpoint_error: Euclidean distance of final predicted position (last step of target)
         """
         if original_input.dim() == 2:
@@ -157,23 +160,29 @@ class GradientReconstructionAttack:
         rec_in = reconstructed_input.cpu().float()
         rec_tg = reconstructed_target.cpu().float()
 
+        # With a batch, the order of reconstructed windows is arbitrary: match each
+        # reconstruction to an original window by minimum position error.
+        if orig_in.shape[0] > 1:
+            from scipy.optimize import linear_sum_assignment
+            cost = torch.cdist(orig_in[..., :2].reshape(orig_in.shape[0], -1),
+                               rec_in[..., :2].reshape(rec_in.shape[0], -1)).numpy()
+            _, col = linear_sum_assignment(cost)
+            rec_in, rec_tg = rec_in[col], rec_tg[col]
+
         input_mse = float(torch.mean((orig_in - rec_in) ** 2).item())
         target_mse = float(torch.mean((orig_tg - rec_tg) ** 2).item())
 
-        in_flat_orig = orig_in.view(1, -1)
-        in_flat_rec = rec_in.view(1, -1)
-        input_cos = float(nn.functional.cosine_similarity(in_flat_orig, in_flat_rec).item())
+        n = orig_in.shape[0]
+        input_cos = float(nn.functional.cosine_similarity(orig_in.reshape(n, -1), rec_in.reshape(n, -1)).mean().item())
+        target_cos = float(nn.functional.cosine_similarity(orig_tg.reshape(n, -1), rec_tg.reshape(n, -1)).mean().item())
 
-        tg_flat_orig = orig_tg.view(1, -1)
-        tg_flat_rec = rec_tg.view(1, -1)
-        target_cos = float(nn.functional.cosine_similarity(tg_flat_orig, tg_flat_rec).item())
-
-        # Average Euclidean distance of (x, y) coordinates across all observation steps
-        pos_dist = torch.norm(orig_in[..., :2] - rec_in[..., :2], dim=-1)  # [1, T_obs]
+        # Average Euclidean distance of (x, y) coordinates across all observation steps.
+        # Inputs are standardized, so this is in standardized units, not metres.
+        pos_dist = torch.norm(orig_in[..., :2] - rec_in[..., :2], dim=-1)  # [B, T_obs]
         position_error = float(pos_dist.mean().item())
 
         # Final predicted position endpoint Euclidean distance
-        endpoint_dist = torch.norm(orig_tg[:, -1, :2] - rec_tg[:, -1, :2], dim=-1)  # [1]
+        endpoint_dist = torch.norm(orig_tg[:, -1, :2] - rec_tg[:, -1, :2], dim=-1)  # [B]
         endpoint_error = float(endpoint_dist.mean().item())
 
         return {
@@ -193,7 +202,7 @@ class ImprovedGradientReconstructionAttack(GradientReconstructionAttack):
     to initialize dummy targets closer to the ground truth before DLG optimization.
     """
     def reconstruct(self, target_gradients, num_iterations=300, lr=0.1, 
-                    tv_weight=1e-4, verbose=False, shared_only=False):
+                    tv_weight=1e-4, verbose=False, shared_only=False, batch_size=1):
         """
         Performs iDLG with output-gradient based target initialization.
         """
@@ -202,15 +211,15 @@ class ImprovedGradientReconstructionAttack(GradientReconstructionAttack):
         # Analytical initialization for last linear bias gradient if available
         # In MSE loss: dL/db_out reflects (y_pred - y_real)
         # Using output gradient signs and magnitudes provides faster convergence
-        init_target = torch.randn(1, PRED_STEPS, OUTPUT_DIM, device=self.device)
+        init_target = torch.randn(batch_size, PRED_STEPS, OUTPUT_DIM, device=self.device)
         if not shared_only and len(target_gradients) > 0:
             last_bias_grad = target_gradients[-1]
             if last_bias_grad.numel() == OUTPUT_DIM:
                 # Scale target initialization toward the negative bias gradient direction
-                bias_dir = -last_bias_grad.view(1, 1, OUTPUT_DIM).repeat(1, PRED_STEPS, 1)
+                bias_dir = -last_bias_grad.view(1, 1, OUTPUT_DIM).repeat(batch_size, PRED_STEPS, 1)
                 init_target = init_target + 0.1 * bias_dir
 
-        dummy_input = torch.randn(1, OBS_STEPS, INPUT_DIM, device=self.device, requires_grad=True)
+        dummy_input = torch.randn(batch_size, OBS_STEPS, INPUT_DIM, device=self.device, requires_grad=True)
         dummy_target = init_target.detach().clone().requires_grad_(True)
 
         optimizer = optim.Adam([dummy_input, dummy_target], lr=lr)
@@ -433,104 +442,99 @@ class DifferentialPrivacyDefense:
     @staticmethod
     def compute_epsilon(noise_multiplier, num_steps, delta=1e-5, sample_rate=0.01):
         """
-        Approximate privacy budget epsilon using the moments accountant (simplified).
-        Uses the Gaussian mechanism composition bound:
-        epsilon ≈ sqrt(2 * ln(1.25/delta)) / noise_multiplier * sqrt(num_steps * sample_rate)
+        Privacy budget of num_steps DP-SGD steps (Poisson sampling rate sample_rate,
+        per-example clipping, noise multiplier sigma), from the RDP accountant in
+        dp_training.py. Only meaningful for models actually trained with DP-SGD.
         """
-        if noise_multiplier <= 0:
-            return float('inf')
-        eps = (np.sqrt(2 * np.log(1.25 / delta)) / noise_multiplier) * np.sqrt(num_steps * sample_rate)
-        return float(eps)
+        from dp_training import compute_epsilon
+        return compute_epsilon(sample_rate, noise_multiplier, num_steps, delta)
 
 
 def run_privacy_evaluation(model_class, client_loaders, scalers, 
                            fl_method='fedavg', num_attack_samples=10,
                            dp_noise_multipliers=[0.0, 0.5, 1.0, 2.0],
-                           device=DEVICE):
+                           device=DEVICE, model=None, attack_batch_size=1,
+                           clip_norm=1.0, mia_samples=200, victim_client=0):
     """
-    Comprehensive privacy evaluation pipeline.
-    
-    1. Instantiates a model (using model_class)
-    2. Runs Gradient Reconstruction Attack (DLG) on real trajectory samples from client 0:
-       - Baseline reconstruction without noise
-       - Reconstruction under varying Differential Privacy noise levels
-    3. Runs Membership Inference Attack (MIA) contrasting client 0 training vs test data
-    4. Computes theoretical privacy budgets (epsilon)
-    5. Returns comprehensive privacy results dict
+    Privacy evaluation pipeline.
+
+    model: the model under attack (normally the final trained model of the FL method).
+           If None, a freshly initialized model_class() is attacked, as in the earlier
+           experiments; results on an untrained model say little about deployed models.
+    1. DLG on num_attack_samples batches of attack_batch_size training windows of the
+       victim client. With noise, the observed batch gradient is clipped to clip_norm and
+       N(0, sigma^2 clip_norm^2) is added: a one-shot perturbation, not DP-SGD training,
+       so no epsilon is reported here (see dp_training.py for DP training + accountant).
+    2. Loss-threshold MIA: victim client training windows (members) vs test windows.
+    Reconstruction errors are in standardized input units.
     """
     shared_only = (fl_method.lower() == 'fedper')
     method_title = "FedPer - Shared Gradients Only" if shared_only else f"{fl_method.upper()} - Full Gradients"
     print(f"\n=======================================================", flush=True)
     print(f"  Running Privacy Attack & Defense Evaluation ({method_title})", flush=True)
+    print(f"  Model: {'trained' if model is not None else 'freshly initialized'} | "
+          f"attack batch size: {attack_batch_size} | batches: {num_attack_samples}", flush=True)
     print(f"=======================================================", flush=True)
 
-    model = model_class().to(device)
+    if model is None:
+        model = model_class().to(device)
+    model = copy.deepcopy(model).to(device)
     model.eval()
 
-    # Extract victim samples from client 0 train loader
-    client_0_data = client_loaders[0]
-    train_loader = client_0_data['train']
-    test_loader = client_0_data['test']
+    victim_data = client_loaders[victim_client]
+    train_loader = victim_data['train']
+    test_loader = victim_data['test']
 
-    victim_inputs = []
-    victim_targets = []
+    victim_batches = []
+    pool_in, pool_tg = [], []
     for batch in train_loader:
-        inputs, targets = batch[0], batch[1]
-        for i in range(inputs.size(0)):
-            victim_inputs.append(inputs[i:i+1].clone())
-            victim_targets.append(targets[i:i+1].clone())
-            if len(victim_inputs) >= num_attack_samples:
-                break
-        if len(victim_inputs) >= num_attack_samples:
+        pool_in.append(batch[0])
+        pool_tg.append(batch[1])
+        if sum(len(x) for x in pool_in) >= num_attack_samples * attack_batch_size:
             break
+    pool_in, pool_tg = torch.cat(pool_in), torch.cat(pool_tg)
+    for k in range(min(num_attack_samples, len(pool_in) // attack_batch_size)):
+        sl = slice(k * attack_batch_size, (k + 1) * attack_batch_size)
+        victim_batches.append((pool_in[sl].clone(), pool_tg[sl].clone()))
 
     attacker = GradientReconstructionAttack(model, device=device)
 
-    # 1. Evaluate DLG reconstruction across different DP noise levels
     reconstruction_results_by_dp = {}
 
     for nm in dp_noise_multipliers:
-        print(f"\n[Privacy Eval] Evaluating Reconstruction Defense ({fl_method}) with DP noise multiplier: {nm}...", flush=True)
-        dp = DifferentialPrivacyDefense(clip_norm=1.0, noise_multiplier=nm)
+        print(f"\n[Privacy Eval] Reconstruction ({fl_method}) with gradient noise multiplier: {nm}...", flush=True)
         sample_metrics = []
 
-        for idx, (real_in, real_tg) in enumerate(zip(victim_inputs, victim_targets)):
-            # Victim computes gradients (shared only if FedPer)
+        for real_in, real_tg in victim_batches:
             clean_grads = attacker.compute_target_gradient(real_in, real_tg, shared_only=shared_only)
 
-            # Apply DP defense to gradients if noise_multiplier > 0
-            defended_grads = []
-            for g in clean_grads:
-                if nm > 0:
-                    noise = torch.normal(0.0, dp.clip_norm * nm, size=g.shape, device=g.device)
-                    defended_grads.append(g + noise)
-                else:
-                    defended_grads.append(g)
+            defended_grads = clean_grads
+            if nm > 0:
+                total_norm = torch.sqrt(sum((g ** 2).sum() for g in clean_grads))
+                factor = min(1.0, clip_norm / (float(total_norm) + 1e-12))
+                defended_grads = [g * factor + torch.normal(0.0, clip_norm * nm, size=g.shape, device=g.device)
+                                  for g in clean_grads]
 
-            # Attacker attempts reconstruction from intercepted (defended) gradients
             rec_in, rec_tg, _ = attacker.reconstruct(
-                defended_grads, num_iterations=150, lr=0.1, tv_weight=1e-4, verbose=False, shared_only=shared_only
+                defended_grads, num_iterations=150, lr=0.1, tv_weight=1e-4, verbose=False,
+                shared_only=shared_only, batch_size=real_in.shape[0]
             )
 
             metrics = attacker.evaluate_reconstruction(real_in, real_tg, rec_in, rec_tg)
             sample_metrics.append(metrics)
 
-        # Average metrics across attack samples
         avg_metrics = {
             k: float(np.mean([m[k] for m in sample_metrics]))
             for k in sample_metrics[0].keys()
         }
-        avg_metrics["epsilon"] = dp.compute_epsilon(nm, num_steps=100)
         reconstruction_results_by_dp[f"dp_sigma_{nm}"] = avg_metrics
 
-        print(f"  -> Pos Error: {avg_metrics['position_error']:.4f} | "
-              f"Input Cosine: {avg_metrics['input_cosine_sim']:.4f} | "
-              f"Epsilon: {avg_metrics['epsilon']:.2f}", flush=True)
+        print(f"  -> Pos Error (std. units): {avg_metrics['position_error']:.4f} | "
+              f"Input Cosine: {avg_metrics['input_cosine_sim']:.4f}", flush=True)
 
-    # 2. Evaluate Membership Inference Attack (MIA)
     print(f"\n[Privacy Eval] Evaluating Membership Inference Attack (MIA) for {fl_method}...", flush=True)
     mia = MembershipInferenceAttack(model, device=device)
-    mia_results = mia.evaluate(train_loader, test_loader, num_samples=min(200, len(victim_inputs) * 20))
+    mia_results = mia.evaluate(train_loader, test_loader, num_samples=mia_samples)
 
     print(f"  -> MIA AUC: {mia_results['auc']:.4f} | "
           f"Accuracy: {mia_results['accuracy']:.4f} | "
@@ -540,11 +544,21 @@ def run_privacy_evaluation(model_class, client_loaders, scalers,
     results = {
         "fl_method": fl_method,
         "shared_only": shared_only,
-        "num_attack_samples": len(victim_inputs),
+        "num_attack_batches": len(victim_batches),
+        "attack_batch_size": attack_batch_size,
         "reconstruction_defense": reconstruction_results_by_dp,
         "membership_inference": mia_results
     }
     return results
+
+
+def run_membership_inference(model, client_loaders, device=DEVICE, num_samples=200):
+    """Loss-threshold MIA on every client: its training windows vs its test windows."""
+    out = {}
+    for cid, loaders in client_loaders.items():
+        out[cid] = MembershipInferenceAttack(model, device=device).evaluate(
+            loaders['train'], loaders['test'], num_samples=num_samples)
+    return out
 
 
 if __name__ == '__main__':

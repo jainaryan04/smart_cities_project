@@ -19,11 +19,8 @@ This repository implements the complete codebase, benchmark suite, privacy audit
 * **Formal Non-IID Heterogeneity Quantification**: Quantifies statistical divergence across geographic corridors using Kullback-Leibler (KL) divergence, Jensen-Shannon (JS) divergence, and Wasserstein-1 Earth Mover's Distance (EMD).
 * **Personalized Federated Learning (PFL)**: Implements **FedPer** (base feature representation sharing with localized output heads) and **pFedMe** (Moreau envelope bi-level optimization) to reconcile collaborative representations with localized driving behaviors.
 * **Privacy Vulnerability & Defense Auditing**: Implements **Deep Leakage from Gradients (DLG)** and Improved DLG (**iDLG**) continuous trajectory reconstruction attacks alongside **Membership Inference Attacks (MIA)**, benchmarking empirical privacy leakage under **Differential Privacy (DP-SGD)** Gaussian perturbation.
-* **Empirical Validation**:
-  * **FedPer** achieves a Global Pooled ADE of **2.951 m** (outperforming Centralized baseline of 3.284 m and standard FedAvg of 3.512 m).
-  * Reduces inter-zone disparity gap from **2.327 m** down to **0.785 m** (&minus;66.3% reduction) and compresses fairness Coefficient of Variation (CoV) from **0.281** to **0.106**.
-  * Delivers **43.1% communication parameter savings** by exchanging only shared representation layers.
-  * Adding DP noise ($\sigma = 1.0$) prevents gradient inversion (reconstruction MSE $\approx 1.25$, cosine similarity $< 0.15$) with minor accuracy impact ($\Delta\text{ADE} \le 0.14\,\text{m}$).
+* **Baselines and statistics**: Constant-velocity / constant-acceleration extrapolation, a centralized model with zone-specific heads, isolated silos evaluated on their own zone, equal training budgets, five seeds and paired tests.
+* **Status**: The numbers previously listed here came from a pipeline that joined reused NGSIM vehicle IDs across recording periods, and the DP rows were not measured. They are withdrawn until the corrected pipeline has been rerun on the full data (see Section 3).
 
 ---
 
@@ -65,10 +62,15 @@ This repository implements the complete codebase, benchmark suite, privacy audit
 
 ## 3. Benchmark Results
 
-### 3.1 Overall Model Comparison (12 Rounds, 3.0s Horizon)
+Results have not yet been regenerated with the corrected pipeline. After running Section 5.3, see:
 
-| Learning Paradigm | Global Pooled ADE (m) | Global Pooled FDE (m) | Global Pooled RMSE (m) | MAE (m) | MAPE (%) | Worst-Zone ADE (m) | Disparity Gap (m) | Fairness CoV | Uplink / Client / Round |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+* `results/JOURNAL_BENCHMARK_REPORT.md`: pooled and per-zone accuracy (mean and SD over seeds), fairness and paired tests
+* `results/journal_dp_accounting.csv`: DP-FedAvg sampling rate, steps and epsilon from the RDP accountant
+* `results/journal_privacy_dlg_results.csv` and `results/journal_privacy_mia_results.csv`: attacks on the trained models
+
+Cells that were not measured are written as `N/A`.
+
+--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | **Centralized Baseline** | 3.284 | 6.512 | 3.910 | 2.180 | 14.82% | 4.812 | 1.890 | 0.224 | &mdash; (Raw data) |
 | **Isolated Edge Silos** | 4.120 | 8.245 | 4.950 | 2.810 | 19.45% | 5.890 | 2.650 | 0.312 | $0.0\,\text{KB}$ |
 | **FedAvg** | 3.512 | 7.045 | 4.215 | 2.345 | 16.12% | 5.210 | 2.327 | 0.281 | $146.6\,\text{KB}$ |
@@ -102,7 +104,9 @@ smart_cities_project/
 ├── privacy_attacks.py                         # DLG, iDLG gradient inversion, MIA, and DP-SGD defenses
 ├── run_journal_experiments.py                 # Full experimental orchestrator (matrix benchmarks)
 ├── visualize.py                               # Generator for 10 publication-quality figures
-├── test_suite.py                              # Unit and integration test suite (24 tests)
+├── baselines.py                               # CV/CA extrapolation and centralized zone-head baseline
+├── dp_training.py                             # DP-SGD client and RDP privacy accountant
+├── test_suite.py                              # Unit and integration test suite (28 tests)
 ├── verify_dataset.py                          # Raw dataset verification and integrity script
 ├── verify_manuscript.py                       # Automated verification for LaTeX and Markdown papers
 ├── journal_paper.tex                          # Complete IEEEtran LaTeX source manuscript
@@ -119,7 +123,7 @@ smart_cities_project/
 │   ├── fig7_heterogeneity_vs_personalization.png # Performance under synthetic non-IID scaling
 │   ├── fig8_privacy_reconstruction_vs_dp.png  # DLG trajectory reconstruction vs DP noise
 │   ├── fig9_fairness_disparity_comparison.png # Inter-zone disparity and fairness CoV
-│   └── fig10_pareto_tradeoff_frontier.png     # Multi-objective Pareto optimization frontier
+│   └── fig10_accuracy_communication.png       # Pooled ADE vs communication (measured runs)
 └── results/                                   # Benchmark CSV outputs
     ├── journal_benchmark_results.csv          # Comprehensive model evaluation across corridors
     ├── journal_controlled_heterogeneity_results.csv # Synthetic heterogeneity stress tests
@@ -143,12 +147,12 @@ python -m venv .venv
 # Linux/macOS:
 source .venv/bin/activate
 
-pip install torch torchvision numpy scipy matplotlib pandas
+pip install torch torchvision numpy scipy matplotlib pandas scikit-learn
 ```
 
 ### 5.2 Running the Test Suite
 
-Execute the 24 automated unit and integration tests covering data preprocessing, model architectures, federated algorithms, personalization heads, divergence metrics, privacy attacks, and differential privacy:
+Execute the 28 automated unit and integration tests covering data preprocessing, model architectures, federated algorithms, personalization heads, divergence metrics, privacy attacks, track assembly, kinematic baselines and the DP accountant:
 
 ```bash
 python test_suite.py
@@ -156,18 +160,24 @@ python test_suite.py
 
 ### 5.3 Executing the Complete Benchmark Suite
 
-To execute the entire 6-paradigm experimental matrix, run:
+Place the NGSIM export at `export.csv` (it needs `Vehicle_ID`, `Frame_ID`, `Global_Time`, `Local_X`, `Local_Y`, `v_Vel`, `v_Acc`, `Location`), then run:
 
 ```bash
-python run_journal_experiments.py --rounds 12 --cent-epochs 8
+python run_journal_experiments.py --tune --force-preprocess
 ```
 
-This will automatically:
-1. Load or generate preprocessed trajectory sequences for the 3 RSU zones.
-2. Quantify statistical divergence (KL, JS, EMD) across corridors.
-3. Train and benchmark Centralized, Isolated, FedAvg, FedProx, pFedMe, and FedPer.
-4. Execute DLG gradient inversion attacks and MIA under various DP-SGD noise budgets.
-5. Export CSV summaries to `results/` and render publication figures to `plots/`.
+Defaults: 12 rounds of 1 local epoch, centralized and isolated models trained for the same 12 epochs, seeds 42 to 46, DP-FedAvg at noise multipliers 0.5, 1 and 2 with clipping norm 1 and delta 1e-5. `--fast` runs a short check (2 rounds, 2 seeds, one DP setting). The horizon is set with the environment variables `NGSIM_OBS_STEPS` and `NGSIM_PRED_STEPS` (2 Hz steps; default 6 and 6).
+
+The run:
+1. Splits each vehicle's rows into contiguous tracks (breaking on frame gaps, time gaps and position jumps) before downsampling to 2 Hz, and writes the vehicle split to `results/data_split_vehicle_ids.csv`.
+2. Quantifies divergence (KL, JS, EMD) across zones.
+3. Optionally tunes FedProx mu and pFedMe lambda on the validation split.
+4. Trains CV/CA, centralized (pooled and zone heads), isolated silos, FedAvg, FedProx, FedPer and pFedMe for each seed, and reports paired tests.
+5. Trains DP-FedAvg with per-example clipping and reports epsilon from the RDP accountant.
+6. Runs DLG/iDLG and membership inference against the trained models.
+7. Writes CSVs and the report to `results/` and figures to `plots/`.
+
+The DP guarantee is per training window, not per vehicle.
 
 ### 5.4 Verifying the Manuscript
 
@@ -190,9 +200,9 @@ python verify_manuscript.py
 | **Fig 5** | Cumulative communication overhead vs test ADE across training rounds. |
 | **Fig 6** | Horizon error growth curves ($t = 0.5\,\text{s}$ to $3.0\,\text{s}$) illustrating error accumulation over time. |
 | **Fig 7** | Model robustness across controlled heterogeneity regimes (Low, Medium, High non-IID). |
-| **Fig 8** | Trajectory reconstruction loss and cosine similarity under varying Differential Privacy noise multipliers. |
+| **Fig 8** | DLG reconstruction error and cosine similarity on trained models when the shared gradient is clipped and noised. |
 | **Fig 9** | Spatial fairness disparity gap and Coefficient of Variation (CoV) comparison across paradigms. |
-| **Fig 10** | Multi-objective Accuracy-Communication-Privacy Pareto frontier. |
+| **Fig 10** | Pooled test ADE vs cumulative communication for every measured configuration. |
 
 ---
 
