@@ -14,6 +14,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.use('Agg')  # Non-interactive backend for headless plotting
+from mpl_toolkits.axes_grid1.inset_locator import mark_inset
 
 from config import PLOTS_DIR, FEET_TO_METERS, OBS_STEPS, PRED_STEPS
 
@@ -62,14 +63,29 @@ def plot_dataset_distribution(client_data, save_path=os.path.join(PLOTS_DIR, "fi
     ax.legend(frameon=True)
     ax.grid(True, linestyle='--', alpha=0.6)
 
-    # Panel B: Velocity Distributions (Non-IID Heterogeneity)
+    # Panel B: Velocity Distributions in Physical SI Units (m/s)
     ax = axes[0, 1]
+    # Check if scalers are available in cache
+    x_mean_vel, x_std_vel = 8.2674, 12.5016
+    try:
+        cache_p = os.path.join(os.path.dirname(save_path), "..", "cache", "federated_trajectory_data.npz")
+        if os.path.exists(cache_p):
+            c_data = np.load(cache_p, allow_pickle=True)
+            x_mean_vel = float(c_data['x_mean'][2])
+            x_std_vel = float(c_data['x_std'][2])
+    except Exception:
+        pass
+
     for idx, cid in enumerate(sorted_cids):
-        vels = client_data[cid]['train_x'][:, :, 2].flatten() * 0.681818  # approx mph
-        ax.hist(vels, bins=30, alpha=0.6, color=colors[idx % len(colors)], label=f"{client_names[idx]} (Mean: {np.mean(vels):.1f} mph)", density=True)
-    ax.set_xlabel('Vehicle Speed (mph)')
+        v_norm = client_data[cid]['train_x'][:, :, 2].flatten()
+        v_raw_fts = v_norm * x_std_vel + x_mean_vel
+        v_ms = v_raw_fts * FEET_TO_METERS  # physical speed in m/s
+        v_ms_valid = v_ms[v_ms >= 0.0]
+        ax.hist(v_ms_valid, bins=30, alpha=0.6, color=colors[idx % len(colors)],
+                label=f"{client_names[idx]} (Mean: {np.mean(v_ms):.1f} m/s)", density=True)
+    ax.set_xlabel('Instantaneous Vehicle Speed (m/s)')
     ax.set_ylabel('Probability Density')
-    ax.set_title('(b) Spatial-Temporal Kinematic Heterogeneity (Speed)')
+    ax.set_title('(b) Spatial-Temporal Kinematic Heterogeneity (Speed in m/s)')
     ax.legend(frameon=True)
     ax.grid(True, linestyle='--', alpha=0.6)
 
@@ -255,8 +271,11 @@ def plot_cross_client_generalization(matrix, row_labels, col_labels, save_path=o
     for i in range(len(row_labels)):
         for j in range(len(col_labels)):
             val = matrix[i, j]
-            color = "white" if val > (np.max(matrix) + np.min(matrix)) / 2 else "black"
-            ax.text(j, i, f"{val:.3f}m", ha="center", va="center", color=color, fontweight='bold', fontsize=11)
+            norm_val = im.norm(val)
+            rgba = im.cmap(norm_val)
+            lum = 0.299 * rgba[0] + 0.587 * rgba[1] + 0.114 * rgba[2]
+            color = "white" if lum < 0.48 else "black"
+            ax.text(j, i, f"{val:.3f}m", ha="center", va="center", color=color, fontweight='bold', fontsize=10.5)
 
     ax.set_title('Cross-Domain Evaluation Matrix (Domain Generalization & Non-IID Gap)', pad=15)
     ax.set_xlabel('Evaluation Test Environment (Edge RSU / Scenario)')
@@ -476,11 +495,27 @@ def plot_fairness_disparity_comparison(fairness_df, save_path=os.path.join(PLOTS
     ax.set_xticklabels(short_names, rotation=15, fontweight='bold')
     ax.set_ylabel('Disparity Gap (meters)')
     ax.set_title('(b) Zone Disparity Gap (Lower = More Equitable)')
+    ax.set_ylim(0, 2.45)
 
     for bar, gap, cov in zip(bars, gaps, covs):
         yval = bar.get_height()
-        ax.text(bar.get_x() + bar.get_width()/2.0, yval + 0.15, f"{gap:.2f}m\n(CoV: {cov:.1f}%)",
-                ha='center', va='bottom', fontsize=10, fontweight='bold')
+        ax.text(bar.get_x() + bar.get_width()/2.0, yval + 0.08, f"{gap:.2f}m\n(CoV: {cov:.1f}%)",
+                ha='center', va='bottom', fontsize=9.5, fontweight='bold')
+
+    # Inset zoom for clustered low-disparity regimes
+    ax_ins = ax.inset_axes([0.34, 0.44, 0.58, 0.48])
+    x_cluster = np.arange(4)
+    cluster_labels = ['Centralized', 'FedAvg', 'FedProx', 'FedPer']
+    cluster_gaps = gaps[:4]
+    cluster_bars = ax_ins.bar(x_cluster, cluster_gaps, width=0.5, color='#8c6bb1', edgecolor='black', alpha=0.9)
+    ax_ins.set_xticks(x_cluster)
+    ax_ins.set_xticklabels(cluster_labels, fontsize=8, fontweight='bold', rotation=12)
+    ax_ins.set_ylim(0.20, 0.36)
+    ax_ins.set_title('Detail: Clustered Low-Disparity Regimes (0.20 - 0.35m)', fontsize=8.5, fontweight='bold')
+    ax_ins.grid(True, linestyle=':', alpha=0.7)
+    for cbar, cval in zip(cluster_bars, cluster_gaps):
+        ax_ins.text(cbar.get_x() + cbar.get_width()/2.0, cval + 0.007, f"{cval:.3f}m",
+                    ha='center', va='bottom', fontsize=8, fontweight='bold')
 
     ax.grid(True, linestyle='--', alpha=0.6)
 
@@ -490,58 +525,13 @@ def plot_fairness_disparity_comparison(fairness_df, save_path=os.path.join(PLOTS
     print(f"[Visualization] Saved fairness disparity comparison plot: {save_path}", flush=True)
 
 
-def plot_accuracy_privacy_tradeoff_pareto(tradeoff_df, save_path=os.path.join(PLOTS_DIR, "fig10_pareto_tradeoff_frontier.png")):
+def plot_accuracy_privacy_tradeoff_pareto(tradeoff_df=None, save_path=os.path.join(PLOTS_DIR, "fig10_pareto_tradeoff_frontier.png")):
     """
-    Plots multi-objective accuracy vs privacy vs communication Pareto frontier.
-    x-axis = DLG Reconstruction Error (m) [Privacy, higher is better]
-    y-axis = Global ADE (m) [Utility, lower is better]
-    bubble size = Communication Overhead (MB)
+    Plots multi-objective empirical trade-offs across measured scientific configurations:
+    - Panel (a): Predictive Utility (Global ADE) vs Wireless Communication Overhead (MiB)
+    - Panel (b): Empirical Privacy Inversion Defense (DLG Recon Error) vs Formal RDP Privacy Budget (epsilon)
     """
-    set_plot_style()
-    fig, ax = plt.subplots(figsize=(11, 7))
-
-    for _, row in tradeoff_df.iterrows():
-        cfg = row['Model Configuration']
-        ade = float(row['Global ADE (m)'])
-        dlg_err = min(float(row['DLG Reconstruction Error (m)']), 12.0)  # cap for display
-        comm = float(row['Comm Overhead (MB)'])
-
-        # Style based on method
-        if 'FedPer' in cfg:
-            color = '#2ca02c'
-            marker = '*'
-            size = 350
-        elif 'Centralized' in cfg:
-            color = '#1f77b4'
-            marker = 's'
-            size = 250
-        elif 'DP-FedAvg' in cfg:
-            color = '#9467bd'
-            marker = '^'
-            size = 200
-        elif 'Isolated' in cfg:
-            color = '#7f7f7f'
-            marker = 'x'
-            size = 150
-        else:
-            color = '#d62728'
-            marker = 'o'
-            size = 220
-
-        ax.scatter(dlg_err, ade, color=color, marker=marker, s=size, edgecolors='black', linewidth=1.5, zorder=5)
-        ax.annotate(cfg, (dlg_err, ade), xytext=(8, 5), textcoords='offset points', fontsize=9, fontweight='bold')
-
-    ax.set_xlabel('Privacy Defense: DLG Trajectory Reconstruction Error (m) [Higher = More Private]', fontweight='bold')
-    ax.set_ylabel('Prediction Accuracy: Global Test ADE (m) [Lower = More Accurate]', fontweight='bold')
-    ax.set_title('Integrated Smart City Multi-Objective Pareto Frontier\n(Accuracy vs Privacy vs Communication Overhead)', fontweight='bold')
-    ax.grid(True, linestyle='--', alpha=0.6)
-
-    # Highlight optimal region
-    ax.axvspan(5.0, 12.5, ymin=0, ymax=0.45, color='green', alpha=0.1, label='Target Operating Zone (High Accuracy & High Privacy)')
-    ax.legend(frameon=True, loc='upper right')
-
-    plt.tight_layout()
-    plt.savefig(save_path, bbox_inches='tight', dpi=300)
-    plt.close()
+    from generate_all_publication_figures import generate_fig10_pareto
+    generate_fig10_pareto()
     print(f"[Visualization] Saved Pareto trade-off frontier plot: {save_path}", flush=True)
 

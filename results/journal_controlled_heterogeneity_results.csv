@@ -1,4 +1,4 @@
-Heterogeneity Level,FedAvg Global ADE (m),FedAvg Mean Zone ADE (m),FedPer Mean Personal ADE (m),pFedMe Mean Personal ADE (m),FedPer Personal Advantage (m),pFedMe Personal Advantage (m)
-Low,3.761,6.315,5.033,9.101,1.282,-2.786
-Medium,3.788,6.803,5.038,8.859,1.765,-2.056
-High,4.018,7.074,5.898,8.571,1.176,-1.497
+Heterogeneity Level,Statistical Div. (JSD),FedAvg Mean Zone ADE (m),FedPer Mean Zone ADE (m),Advantage Delta (m)
+Low,0.0524,1.019,1.095,-0.076
+Medium (Natural),0.1088,1.055,1.14,-0.085
+High,0.1335,1.094,1.361,-0.267

@@ -138,6 +138,30 @@ def compute_mape(pred_coords, gt_coords, epsilon=1.0):
     return float(mape)
 
 
+def compute_nade(pred_coords, gt_coords):
+    """
+    Calculates Normalized Average Displacement Error (NADE).
+    NADE = ADE / mean(trajectory travel distance) * 100%
+    pred_coords: [N, T, 2] in physical units
+    gt_coords:   [N, T, 2] in physical units
+    Returns: scalar float percentage
+    """
+    if isinstance(pred_coords, torch.Tensor):
+        pred_coords = pred_coords.detach().cpu().numpy()
+    if isinstance(gt_coords, torch.Tensor):
+        gt_coords = gt_coords.detach().cpu().numpy()
+
+    ade = compute_ade(pred_coords, gt_coords)
+    step_diffs = np.linalg.norm(np.diff(gt_coords, axis=1), axis=-1)  # [N, T-1]
+    first_step = np.linalg.norm(gt_coords[:, 0, :], axis=-1)          # [N]
+    total_travel = first_step + np.sum(step_diffs, axis=-1)           # [N]
+    mean_travel = float(np.mean(total_travel))
+    
+    if mean_travel < 1e-4:
+        return 0.0
+    return float((ade / mean_travel) * 100.0)
+
+
 def compute_fairness_metrics(zone_errors_dict):
     """
     Computes fairness and equity metrics across spatial zones / clients.
@@ -248,6 +272,7 @@ def evaluate_model_on_loader(model, dataloader, scalers, device="cpu"):
     rmse_meters = compute_rmse(preds_raw_meters, gts_raw_meters)
     mae_meters = compute_mae(preds_raw_meters, gts_raw_meters)
     mape_meters = compute_mape(preds_raw_meters, gts_raw_meters)
+    nade_pct = compute_nade(preds_raw_meters, gts_raw_meters)
 
     ade_feet = compute_ade(preds_raw_feet, gts_raw_feet)
     fde_feet = compute_fde(preds_raw_feet, gts_raw_feet)
@@ -261,6 +286,7 @@ def evaluate_model_on_loader(model, dataloader, scalers, device="cpu"):
         'RMSE_m': rmse_meters,
         'MAE_m': mae_meters,
         'MAPE_m': mape_meters,
+        'NADE_pct': nade_pct,
         'ADE_ft': ade_feet,
         'FDE_ft': fde_feet,
         'RMSE_ft': rmse_feet,

@@ -136,6 +136,103 @@ class AttentionSeq2SeqLSTM(nn.Module):
         return predictions
 
 
+class ConstantVelocityBaseline(nn.Module):
+    """
+    Constant-Velocity (CV) Extrapolation Baseline.
+    Assumes velocity at the last observed step continues constantly through the prediction horizon.
+    """
+    def __init__(self, pred_steps=PRED_STEPS, scalers=None):
+        super(ConstantVelocityBaseline, self).__init__()
+        self.pred_steps = pred_steps
+        self.scalers = scalers
+
+    def forward(self, x, targets=None):
+        if self.scalers is not None:
+            std = torch.tensor(self.scalers['x_std'][:2], device=x.device, dtype=torch.float32)
+            mean = torch.tensor(self.scalers['x_mean'][:2], device=x.device, dtype=torch.float32)
+            p0 = x[:, -1, :2] * std + mean
+            p1 = x[:, -2, :2] * std + mean
+            v = p0 - p1
+            steps = torch.arange(1, self.pred_steps + 1, device=x.device, dtype=torch.float32).view(1, -1, 1)
+            pred_feet = steps * v.unsqueeze(1)
+            y_std = torch.tensor(self.scalers['y_std'][:2], device=x.device, dtype=torch.float32)
+            y_mean = torch.tensor(self.scalers['y_mean'][:2], device=x.device, dtype=torch.float32)
+            return (pred_feet - y_mean) / y_std
+        else:
+            v = x[:, -1, :2] - x[:, -2, :2]
+            steps = torch.arange(1, self.pred_steps + 1, device=x.device, dtype=torch.float32).view(1, -1, 1)
+            return steps * v.unsqueeze(1)
+
+
+class ConstantAccelerationBaseline(nn.Module):
+    """
+    Constant-Acceleration (CA) Extrapolation Baseline.
+    Assumes acceleration estimated over the last two observed intervals continues through the prediction horizon.
+    """
+    def __init__(self, pred_steps=PRED_STEPS, scalers=None):
+        super(ConstantAccelerationBaseline, self).__init__()
+        self.pred_steps = pred_steps
+        self.scalers = scalers
+
+    def forward(self, x, targets=None):
+        if self.scalers is not None:
+            std = torch.tensor(self.scalers['x_std'][:2], device=x.device, dtype=torch.float32)
+            mean = torch.tensor(self.scalers['x_mean'][:2], device=x.device, dtype=torch.float32)
+            p0 = x[:, -1, :2] * std + mean
+            p1 = x[:, -2, :2] * std + mean
+            p2 = x[:, -3, :2] * std + mean
+            v = p0 - p1
+            v_prev = p1 - p2
+            a = v - v_prev
+            steps = torch.arange(1, self.pred_steps + 1, device=x.device, dtype=torch.float32).view(1, -1, 1)
+            pred_feet = steps * v.unsqueeze(1) + 0.5 * (steps ** 2) * a.unsqueeze(1)
+            y_std = torch.tensor(self.scalers['y_std'][:2], device=x.device, dtype=torch.float32)
+            y_mean = torch.tensor(self.scalers['y_mean'][:2], device=x.device, dtype=torch.float32)
+            return (pred_feet - y_mean) / y_std
+        else:
+            v = x[:, -1, :2] - x[:, -2, :2]
+            v_prev = x[:, -2, :2] - x[:, -3, :2]
+            a = v - v_prev
+            steps = torch.arange(1, self.pred_steps + 1, device=x.device, dtype=torch.float32).view(1, -1, 1)
+            return steps * v.unsqueeze(1) + 0.5 * (steps ** 2) * a.unsqueeze(1)
+
+
+class ZoneAwareSeq2SeqLSTM(nn.Module):
+    """
+    Centralized Zone-Aware Seq2Seq LSTM.
+    Shares the LSTM encoder-decoder representation across all zones,
+    with zone-specific output heads (centralized FedPer counterpart).
+    """
+    def __init__(self, input_dim=INPUT_DIM, output_dim=OUTPUT_DIM, hidden_dim=HIDDEN_DIM,
+                 num_layers=NUM_LAYERS, dropout=DROPOUT, pred_steps=PRED_STEPS, num_zones=3):
+        super(ZoneAwareSeq2SeqLSTM, self).__init__()
+        self.pred_steps = pred_steps
+        self.num_zones = num_zones
+        self.encoder = TrajectoryEncoder(input_dim, hidden_dim, num_layers, dropout)
+        self.decoder_lstm = nn.LSTM(
+            input_size=hidden_dim,
+            hidden_size=hidden_dim,
+            num_layers=num_layers,
+            batch_first=True,
+            dropout=dropout if num_layers > 1 else 0.0
+        )
+        self.zone_heads = nn.ModuleList([
+            nn.Sequential(
+                nn.Linear(hidden_dim, hidden_dim // 2),
+                nn.ReLU(),
+                nn.Linear(hidden_dim // 2, output_dim)
+            ) for _ in range(num_zones)
+        ])
+        self.active_zone_id = 0
+
+    def forward(self, x, targets=None, zone_id=None):
+        zid = zone_id if zone_id is not None else self.active_zone_id
+        _, (h_n, c_n) = self.encoder(x)
+        dec_in = h_n[-1].unsqueeze(1).repeat(1, self.pred_steps, 1)
+        dec_out, _ = self.decoder_lstm(dec_in, (h_n, c_n))
+        return self.zone_heads[zid](dec_out)
+
+
 # -------------------------------------------------------------
 # Federated Learning Helper Functions
 # -------------------------------------------------------------

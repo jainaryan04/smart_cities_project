@@ -56,16 +56,16 @@ class NGSIMPreprocessor:
         print(f"[Preprocessor] Reading raw data from {self.csv_path} (limit: {max_raw_rows:,} rows)...", flush=True)
         t0 = time.time()
         
-        cols = ['Vehicle_ID', 'Frame_ID', 'Local_X', 'Local_Y', 'v_Vel', 'v_Acc', 'Location']
+        cols = ['Vehicle_ID', 'Frame_ID', 'Global_Time', 'Local_X', 'Local_Y', 'v_Vel', 'v_Acc', 'Location']
         loc_chunks = {'us-101': [], 'lankershim': [], 'peachtree': []}
         loc_counts = {'us-101': 0, 'lankershim': 0, 'peachtree': 0}
         target_per_loc = max_raw_rows // 3  # Balanced slice across 3 Smart City RSU domains
         
         for chunk in pd.read_csv(self.csv_path, usecols=cols, chunksize=500_000, low_memory=False):
-            for col in ['Vehicle_ID', 'Frame_ID', 'Local_X', 'Local_Y', 'v_Vel', 'v_Acc']:
-                if chunk[col].dtype == object:
+            for col in ['Vehicle_ID', 'Frame_ID', 'Global_Time', 'Local_X', 'Local_Y', 'v_Vel', 'v_Acc']:
+                if not pd.api.types.is_numeric_dtype(chunk[col]):
                     chunk[col] = pd.to_numeric(chunk[col].astype(str).str.replace(',', ''), errors='coerce')
-            chunk = chunk.dropna(subset=['Vehicle_ID', 'Frame_ID', 'Local_X', 'Local_Y', 'v_Vel', 'v_Acc', 'Location'])
+            chunk = chunk.dropna(subset=cols)
             chunk['Location'] = chunk['Location'].astype(str).str.strip().str.lower()
 
             for loc_key in loc_chunks:
@@ -96,17 +96,37 @@ class NGSIMPreprocessor:
         }
 
         client_data = {}
+        min_raw_frames = TOTAL_STEPS * DOWNSAMPLE_STEP
+
         for loc_name in loc_order:
             if loc_name not in df['Location'].values:
                 continue
             cid = loc_map[loc_name]
-            loc_df = df[df['Location'] == loc_name]
-            unique_vids = loc_df['Vehicle_ID'].unique()
+            loc_df = df[df['Location'] == loc_name].copy()
             
+            # Sort by Vehicle_ID, Global_Time, Frame_ID
+            loc_df = loc_df.drop_duplicates(subset=['Vehicle_ID', 'Global_Time', 'Frame_ID']).sort_values(['Vehicle_ID', 'Global_Time', 'Frame_ID'])
+            
+            # Contiguous segment identification:
+            # Segment break happens if Vehicle_ID changes, Frame_ID != prev+1, or Global_Time != prev+100
+            v_change = loc_df['Vehicle_ID'].values[1:] != loc_df['Vehicle_ID'].values[:-1]
+            f_jump = loc_df['Frame_ID'].values[1:] != (loc_df['Frame_ID'].values[:-1] + 1)
+            g_jump = loc_df['Global_Time'].values[1:] != (loc_df['Global_Time'].values[:-1] + 100)
+            breaks = np.concatenate([[True], v_change | f_jump | g_jump])
+            loc_df['segment_id'] = np.cumsum(breaks)
+            
+            # Keep only segments with length >= TOTAL_STEPS * DOWNSAMPLE_STEP (e.g. 60 frames = 6s at 10 Hz)
+            seg_sizes = loc_df['segment_id'].value_counts()
+            valid_segs = set(seg_sizes[seg_sizes >= min_raw_frames].index)
+            loc_df_valid = loc_df[loc_df['segment_id'].isin(valid_segs)]
+            
+            # Disjoint vehicle entity split (0% leakage)
+            unique_vids = loc_df_valid['Vehicle_ID'].unique()
             np.random.seed(RANDOM_SEED)
             np.random.shuffle(unique_vids)
             if max_vehicles_per_loc and len(unique_vids) > max_vehicles_per_loc:
                 unique_vids = unique_vids[:max_vehicles_per_loc]
+                loc_df_valid = loc_df_valid[loc_df_valid['Vehicle_ID'].isin(unique_vids)]
 
             print(f"[Preprocessor] Processing Location '{loc_name}' (Client {cid}) with {len(unique_vids)} vehicles...", flush=True)
             
@@ -120,21 +140,22 @@ class NGSIMPreprocessor:
 
             splits = {'train': ([], []), 'val': ([], []), 'test': ([], [])}
 
-            for vid in unique_vids:
-                v_df = loc_df[loc_df['Vehicle_ID'] == vid].drop_duplicates(subset=['Frame_ID']).sort_values('Frame_ID')
-                v_df = v_df.iloc[::DOWNSAMPLE_STEP]
-                
-                if len(v_df) < TOTAL_STEPS:
-                    continue
-
-                coords = v_df[['Local_X', 'Local_Y', 'v_Vel', 'v_Acc']].values.astype(np.float32)
-                
+            for sid, grp in loc_df_valid.groupby('segment_id'):
+                vid = grp['Vehicle_ID'].iloc[0]
                 if vid in train_vids:
                     split_key = 'train'
                 elif vid in val_vids:
                     split_key = 'val'
-                else:
+                elif vid in test_vids:
                     split_key = 'test'
+                else:
+                    continue
+
+                down = grp.iloc[::DOWNSAMPLE_STEP]
+                if len(down) < TOTAL_STEPS:
+                    continue
+
+                coords = down[['Local_X', 'Local_Y', 'v_Vel', 'v_Acc']].values.astype(np.float32)
 
                 for i in range(0, len(coords) - TOTAL_STEPS + 1, STRIDE):
                     window = coords[i : i + TOTAL_STEPS]

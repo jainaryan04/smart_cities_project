@@ -1,0 +1,383 @@
+The following is a <SYSTEM_MESSAGE> not actually sent by the user. It is provided by the system as important information to pay attention to.
+
+<SYSTEM_MESSAGE>
+[Message] timestamp=2026-10-25T05:11:21Z sender=52cd1f34-5a14-48dc-a0a9-859309865c0f priority=MESSAGE_PRIORITY_HIGH content=<original_task>
+**Task**: # FINAL REVISION DIRECTIVE — RESEARCH PAPER, ALL 32 CORRECTIONS
+
+## 0. Your responsibility
+
+You are responsible for completing the final technical and editorial revision of this research paper, not merely suggesting edits.
+
+The latest paper is `final_paper(2).pdf`. The workspace should also contain the older reviewer-annotated PDF, the additional corrections DOCX, and the project source, experimental code and figure-generation scripts, where available.
+
+This has already been through four or five revision cycles. Repeating the same general recommendations, changing wording without fixing the underlying issue, or marking an item complete because a sentence was added is unacceptable.
+
+**Your task is to implement every correction that can legitimately be completed, run the necessary checks and experiments, regenerate the paper, and independently audit the final artifacts against every correction.**
+
+Do not stop after producing a plan. Do not ask for confirmation between stages. Work through the complete task now, and clearly report anything that cannot be completed because a required source file, dataset, experiment or artifact is unavailable.
+
+### Non-negotiable rules
+
+1. **Inspect before editing.** Read the current PDF, the reviewer annotations, the additional corrections document, the editable manuscript source, the code, the saved experiment results and the figure-generation scripts.
+2. **Use the original reviewer requirements as the specification.** Build a 32-row correction ledger from the supplied review materials. Preserve the original requirements; do not replace them with a new interpretation or quietly omit a difficult item.
+3. **Edit the source of truth.** Modify the actual manuscript and relevant code/data artifacts, not just rendered PDF pages or text extracted from the PDF. Never repair a plot using a screenshot overlay.
+4. **Prefer evidence over wording.** If an issue concerns calculations, statistics, privacy guarantees, data quality or plotted results, inspect the underlying implementation and data. A prose revision alone does not count as a fix.
+5. **Never fabricate results.** Do not invent experimental values, standard deviations, p-values, privacy budgets, source filenames, split manifests or validation runs. If an experiment cannot be rerun, state that limitation and qualify the claim.
+6. **Keep everything consistent.** Any changed result must be updated in the abstract, methodology, result tables, figures, captions, discussion and conclusion wherever applicable.
+7. **Preserve valid work.** Do not delete a correct result, change the dataset or suppress an inconvenient finding just to make the paper appear stronger. Use the same evaluation protocol unless a justified correction requires rerunning the experiment.
+8. **Do not audit the bibliography in this task.** Reference-list verification is outside the agreed scope. Do not spend time on references at the expense of the 32 correction points.
+9. **Completion must be demonstrated.** A correction is complete only when the resulting source, numerical output or rendered PDF has been inspected and verified.
+
+---
+
+## PHASE 1 — Establish the correction ledger and inspect the workspace
+
+Before editing, create a correction matrix with these columns:
+
+- Correction number and original requirement.
+- Evidence of the problem in the current manuscript.
+- Exact source file, code function, table, equation or figure involved.
+- Concrete corrective action.
+- Experiment or test required.
+- Verification evidence after the change.
+- Final status: Fixed, Partially Fixed or Unresolved.
+
+Use the existing 32 reviewer corrections and the findings below as the working baseline. If the supplied annotation files reveal a specific requirement that is not captured below, preserve it as a separate sub-item under its appropriate correction number; do not silently omit it.
+
+Inspect all available project files. Determine which manuscript file generates the PDF, which scripts generate the figures, where each reported result comes from, and which experimental runs produced the current numbers.
+
+If the actual source or results cannot be located, explicitly identify the missing artifact. Do not pretend the manuscript has been fully corrected simply by editing the PDF.
+
+## PHASE 2 — Implement all 32 correction points
+
+### A. Experimental design, data and quantitative validity
+
+**1. Isolated own-zone baseline**
+
+Preserve and verify the own-zone comparison. The current manuscript reports a pooled own-zone ADE of 0.880 ± 0.048 m and a FedPer ADE of 0.930 ± 0.058 m, with a paired-test result of p = 0.2938.
+
+Confirm that these values are calculated from the same stated test partitions and compatible evaluation procedures. Keep the conclusion appropriately narrow: local models can perform competitively in their home zones, while the study's central contribution concerns transfer across heterogeneous zones. Do not claim statistical equivalence solely because a test is not significant.
+
+**2. Physical units and baseline validity**
+
+Verify that positions, velocities, accelerations, standardization and de-standardization use consistent units. Predictions must be converted to the correct physical units before metrics are calculated.
+
+Check the Constant Velocity (CV) and Constant Acceleration (CA) equations against their actual code implementation and confirm that the baseline errors use the same held-out trajectories and forecast horizon as the learned models.
+
+**3. References**
+
+Keep reference-list validation out of scope, as previously agreed. Do not use it as a substitute for the required technical corrections.
+
+**4. Differential-privacy accounting — highest priority**
+
+This must be fixed through code and numerical verification. Do not simply revise the prose.
+
+The latest manuscript reports the following current train/validation/test window counts:
+
+- US-101: 1,351 / 297 / 312
+- Lankershim: 7,369 / 1,660 / 1,680
+- Peachtree: 11,193 / 2,338 / 2,507
+
+However, its privacy section also refers to historical sample counts of 1,430, 6,094 and 7,364, with 132, 564 and 684 local training steps. These configurations must be reconciled.
+
+**Required method:**
+
+1. Inspect the actual DP training implementation and determine which records were used for DP training. Establish whether the DP models were trained on the current splits or a separate historical configuration.
+2. Identify the precise privacy unit and adjacency definition: individual trajectory window, vehicle, trip or another explicitly defined unit.
+3. Inspect actual gradient clipping, per-sample gradients, noise addition, loss reduction, optimizer updates, batch handling, sampler and random-number generation.
+4. Reconstruct the true number of privacy-relevant optimizer steps for each client and each communication round. Match this to the actual data loader, including shuffling, final partial batches, dropped batches and any sampling with replacement.
+5. Use an RDP accountant or another appropriate, documented accountant whose mathematical assumptions match the implementation. Prefer an established implementation such as Opacus if compatible with the project, or provide equivalent verifiable calculations for the existing implementation.
+6. Explicitly justify the sampling model. Do not automatically assume that q = batch size / dataset size provides a valid accountant for every fixed-minibatch or shuffled-data loader. If the accountant assumes Poisson subsampling, verify that the actual sampler satisfies that assumption; otherwise use a valid alternative accountant or change and rerun the mechanism.
+7. Compute per-client privacy budgets for each noise multiplier and identify the appropriate worst-case guarantee for the stated threat model. Do not derive a claimed federation guarantee by simply averaging sampling rates, step counts or epsilon values.
+8. Save the exact accountant inputs, software/version information, per-client results, the selected RDP orders or other accounting settings, delta, and a machine-readable output file.
+
+The paper currently reports worst-case client bounds of epsilon ≤ 12.01 at sigma = 0.5, epsilon ≤ 5.46 at sigma = 1.0, and epsilon ≤ 2.60 at sigma = 2.0. Treat these as **provisional historical claims**, not verified results. Keep them only if a correct recomputation supports them.
+
+If the original DP run used a different dataset split, either reproduce and document that separate experiment precisely, or rerun DP-SGD on the current split. Do not mix the training sample counts of one experiment with the privacy accounting of another.
+
+**5. Match training budgets**
+
+Verify that centralized/isolated training and federated training use the stated 12-epoch and 12-round/one-local-epoch protocols. Confirm actual epochs and optimizer steps from logs rather than relying only on configuration comments.
+
+Describe these as matched training-pass budgets, not automatically equivalent computational costs. Preserve the centralized zone-aware baseline if its implementation and evaluation remain valid.
+
+**6. Five seeds and statistical reporting**
+
+Verify that seeds 42–46 were actually used for the reported results. Recompute seed-level means, standard deviations, and paired tests directly from saved outputs wherever possible.
+
+Keep Table II's distinction between ADE mean ± SD and other metrics reported as pooled means only if accurate. Provide additional uncertainty estimates where data support them, particularly for privacy metrics; do not invent them.
+
+Confirm that every paired test uses corresponding seed-level observations, that its p-value agrees with the reported model comparison, and that the five-seed sample size and exploratory nature of multiple comparisons are stated where relevant.
+
+**7. Numerical consistency across tables and text**
+
+Regenerate or independently recompute Tables II–VI from saved results. Verify global ADE, per-zone ADE, mean zone ADE, best/worst errors, disparity gaps, coefficient of variation, normalized ADE, communication volumes, attack errors and p-values.
+
+Use unrounded values for derived statistics and round only for display. All repeated values in the abstract, tables, captions, plots and conclusion must agree.
+
+Do not manually change a table cell to match a paragraph if the underlying result disagrees. Locate and fix the actual source of the discrepancy.
+
+**8. Cross-zone transfer-degradation ratio**
+
+Verify the reported US-101 silo result on Peachtree. The current values are approximately 5.028 m out-of-zone ADE and 0.998 m home-zone ADE, giving a ratio of approximately 5.04.
+
+Recompute the ratio from the underlying results and make sure that the selected denominator is the relevant home-zone baseline. Keep the claim specific to this silo and destination.
+
+**9. FedProx and pFedMe tuning**
+
+Inspect the actual validation/evaluation pipeline.
+
+Preferred solution: conduct a reasonable, explicitly documented validation-only parameter search for FedProx and pFedMe. Specify the search space, selection metric, budget and selected configurations. Never tune against the test results.
+
+If resources, time or source data do not permit genuine tuning, do not fabricate tuned results. Keep the hyperparameters explicitly labelled as uncalibrated literature defaults and describe the comparison as exploratory everywhere, including the abstract if necessary, results, discussion and conclusion.
+
+Do not present default-parameter failure as proof that an algorithm is inherently inferior.
+
+**10. Three-zone study scope**
+
+Keep the study framed as a three-zone transfer experiment. Retain the limitation that three roadside-unit domains do not establish performance at a high-cardinality federation scale. Do not inflate the scope of the results.
+
+**11. Dataset-selection reproducibility**
+
+Document the exact available NGSIM source/export, location-specific record selection, required fields, row rejection rules, duplicate-key policy, segment construction, downsampling, sliding-window generation and exclusion criteria.
+
+State the source filenames/export version if they can be established from the actual files. Never invent a filename or dataset version.
+
+If the exact original export cannot be identified, disclose that reproducibility limitation rather than claiming the ingestion details are complete.
+
+**12. Data-pipeline repair and the Peachtree outlier**
+
+The manuscript reports a maximum Peachtree displacement of 14.00 m over 0.5 s, corresponding to a 45.88 ft longitudinal jump and approximately 28 m/s.
+
+Inspect the exact trajectory and its surrounding frames. The current explanation attributes this to tracking jitter and occlusion, but that cause must be supported by the data, metadata or a defensible diagnostic rather than asserted merely because it seems plausible.
+
+Run a documented sensitivity analysis on the main results with and without the identified anomalous trajectory or segment. State the rule used for any exclusion and quantify how the results change.
+
+Distinguish clearly between:
+- preventing cross-session track stitching;
+- verifying chronological continuity; and
+- removing or retaining anomalous raw sensor-tracking observations.
+
+Do not say the pipeline eliminates all non-physical jumps if a known high-displacement outlier is retained. Do not delete it silently.
+
+**13. Parameter-count arithmetic**
+
+Verify the input embedding, encoder, decoder, output head, shared backbone, head parameter count, total parameter count and storage size against the actual model architecture. Correct the text if the implemented architecture differs from the described one. Regenerate the calculation from code where possible.
+
+**14. Divergence metrics**
+
+Report only JSD, cosine distance, or other metrics for which values and calculation procedures can be reproduced from saved outputs. If KL or Wasserstein values were not retained, do not imply that they form part of the verified empirical findings.
+
+Verify the reported JSD and cosine-distance numbers and specify the dataset subset, standardization, histogram/binning method and initialization state used to calculate them.
+
+**15. Three-second observation and prediction horizon**
+
+Preserve the study's 3 s observation / 3 s prediction design if that is the implemented protocol. Clearly state that the results are not directly comparable to benchmarks that use a different prediction horizon. Do not suggest the study evaluates a five-second horizon unless such experiments are actually present.
+
+**16. Communication accounting**
+
+Preserve the revised four-feature payload estimate only as what it actually represents: 999,999 records × four float32 features, approximately 15.26 MiB.
+
+It excludes raw vehicle/frame identifiers, timestamps and preprocessing fields, so it must not be presented as the complete communication cost of centralizing all original data.
+
+Verify transmitted parameter counts, direction of traffic, precision, number of clients and rounds. Use one consistent definition of communication volume across code, text, tables and figures. Distinguish FedPer's actual uplink/downlink accounting from any alternative measure.
+
+**17. Exact CV/CA formulas and implementation**
+
+Make the equations match the code exactly. Use explicit prediction time, e.g. tau_t = t × delta_t, in seconds when velocity and acceleration use physical time units.
+
+Confirm how velocity and acceleration are estimated, their coordinate units, initialization at the last observed position, and treatment of relative-origin coordinates. Recompute baseline errors if the existing implementation does not match the printed formulas.
+
+**18. Normalized ADE**
+
+Verify the NADE formula and implementation against the reported values. State clearly whether the normalization is computed per trajectory before averaging or via a pooled ratio of means. Choose the definition actually used in code and apply it consistently. Do not switch definitions merely to improve reported performance.
+
+**19. FedPer's private prediction head**
+
+Keep the correct conclusion that withholding the personalized head gradient does not automatically prevent reconstruction from shared gradients.
+
+Specify exactly what parameters are visible to the adversary, what stays on-device and what the attacker needs to reconstruct trajectories. Do not claim that head withholding has no possible privacy value in every setting; state what this specific experiment demonstrates.
+
+**20. DLG attack reproducibility and threat model**
+
+Specify the exact attack implementation, target gradient, reconstruction target, initialization, victim-window count, loss function, optimizer, learning rate, regularization, iterations, clipping and noise settings, random seeds, model state and conversion back to physical coordinates.
+
+Crucially, explain how the adversary can compute a candidate gradient through the private FedPer head if that head is retained on-device. If the experiment assumes the head is known to the attacker, state that as a white-box threat-model assumption and discuss the limitation. If the head is unknown, implement an attack that is actually consistent with the stated information available to the attacker.
+
+**Preferred solution for the DP/attack inconsistency:**
+
+Where feasible, evaluate reconstruction against the exact clipped-and-noised gradient mechanism used in DP-SGD, with the correct batch construction and output available to the adversary. The attack objective must match the mechanism being evaluated.
+
+If that is not computationally or technically feasible, preserve the current single-window Gaussian-noise reconstruction experiment only as a separate empirical stress test. Label it explicitly as such. Do not attach the batch-training epsilon to the single-window result or suggest that the accountant formally guarantees that specific reconstruction error.
+
+**21. Membership inference**
+
+Verify the member/non-member selection, disjoint partitions, score orientation, ROC-AUC calculation, classification threshold and accuracy. Report the direction of the AUC correctly. If the AUC is below 0.5 because of score orientation, explain that rather than treating an inverted AUC as a second independent measurement.
+
+State that the effect of DP-SGD on MIA was not evaluated if it was not run. Do not infer DP's membership-inference resistance from a DLG-only experiment.
+
+**22. Remove undefined personalization-recovery metric**
+
+Verify that the earlier recovery rate remains removed from the paper, figures, tables and discussion. Do not reintroduce it unless a mathematically valid, clearly defined replacement is developed and its results are reproducible.
+
+**23. Table I limitations**
+
+Retain the honest limitations concerning three zones, the 3 s/3 s horizon and the edge-RSU experimental design. Ensure the table's wording does not imply that the paper evaluates more clients, forecast horizons or road settings than it does.
+
+**24. Replace placeholders**
+
+Search the manuscript and all tables/figures for placeholder numeric values such as “999.00” or fabricated measurements. Use N/A only where a metric is not applicable or was not measured. If a value should exist, calculate it from results or mark the item as unresolved.
+
+**25. Abstract length and accuracy**
+
+Keep the abstract between 150 and 250 words, preferably around 220–240 words. Count words programmatically using a documented method and verify manually after PDF rendering.
+
+Include the real main findings and scope limitations. Ensure the privacy sentence agrees with the final accountant and does not link single-window DLG reconstruction directly to a separate batch-DP epsilon without justification.
+
+**26. Calibrate all technical claims**
+
+Search the whole manuscript for overconfident or unsupported terms, including “certified,” “formal guarantees,” “reliably suppress,” “proves,” “guarantees zero leakage,” “eliminates all jumps,” “catastrophic” and equivalent wording.
+
+Do not blindly replace these words with synonyms. First determine what the experiment actually establishes, then rewrite the claim to match the evidence. Preserve strong claims only when the method and results justify them.
+
+### B. Reproducibility, declarations and figures
+
+**27. Author and AI-use declarations**
+
+Preserve a correct plural author statement and the AI-use disclosure. Ensure the declaration truthfully reflects actual assistance used and does not claim that an independent verification was carried out unless it was.
+
+**28. Code, data splits and reproducibility artifacts**
+
+Inspect the actual project artifacts. Confirm that the stated preprocessing pipeline, evaluation code and model checkpoints exist before claiming they are publicly available.
+
+Resolve the ambiguity created by recycled `Vehicle_ID` values. Define a stable split entity that respects recording-session identity and trajectory continuity. Ensure overlapping windows and related segments from the same identifiable vehicle/session cannot cross train, validation and test sets inadvertently.
+
+Publish or preserve a deterministic split manifest where possible and include exact train/validation/test counts per zone. Do not claim that a split manifest exists until it has been created and verified.
+
+If source files or exported data are missing, report precisely what is required to finish the reproducibility correction.
+
+**29. Fig. 1: labels and units**
+
+Inspect each panel and verify that the plotted data matches its title, axis labels, units and legend. The speed panel must clearly distinguish physical speed in m/s from standardized speed or z-scores. Ensure the other panels use the correct relative/physical displacement units and that no values are mislabelled.
+
+**30. Fig. 2: example trajectory readability**
+
+Verify that observed and predicted trajectories, ground truth, axes, legends and site labels are distinguishable at actual publication size. Ensure the plotted examples correspond to the stated experiments. Do not select only visually attractive examples without describing the selection method.
+
+**31. Fig. 3: heatmap**
+
+Retain readable high-contrast numeric annotations, appropriate font size, legible axes and a colour scale that honestly represents the data. Preserve the correct logarithmic scale if the underlying values and colour mapping justify it. Ensure native-zone boxes and labels are clear.
+
+**32. Figs. 4, 7, 8 and 9: final scientific-figure repair**
+
+- Fig. 4: Fix crowded markers and overlapping model labels, particularly in the low-error cluster. Make the communication volume definition consistent between the plot, text, table and caption. The caption must accurately describe whether plotted volume is total cumulative traffic, uplink-only traffic or per-round traffic.
+- Fig. 7: Clearly distinguish the measured DLG reconstruction response from the DP-SGD accounting result. Do not visually imply that the separately perturbed single-window attack is covered by the batch-accountant epsilon unless that relationship is established.
+- Fig. 8: Make all model categories readable and ensure the caption accurately describes which models are plotted. If it says that an isolated own-zone baseline is shown in grey, that baseline must actually be present.
+- Fig. 9: Maintain a clear separation between the predictive accuracy/communication comparison and the reconstruction/privacy-budget comparison. Do not place unmeasured ADE values on the empirical accuracy plot. Keep point labels from overlapping and verify that each point corresponds to the correct actual result.
+
+For every figure, render the complete PDF at normal page size and inspect the final result, not just the notebook or image source. Fix clipping, unreadable ticks, crowded labels, insufficient contrast, inconsistent legends, misleading scales and caption mismatches. Regenerate figures from data and code rather than manually editing their appearances.
+
+---
+
+## PHASE 3 — Use authoritative technical guidance
+
+For differential privacy, consult and follow the assumptions of the official primary sources rather than guessing:
+
+- Opacus PrivacyEngine: https://opacus.ai/api/privacy_engine.html
+- Opacus FAQ and RDP accounting: https://opacus.ai/docs/faq
+- NIST SP 800-226, *Guidelines for Evaluating Differential Privacy Guarantees*: https://doi.org/10.6028/NIST.SP.800-226
+- TensorFlow Privacy accounting documentation, as an additional reference if needed: https://www.tensorflow.org/responsible_ai/privacy/tutorials/classification_privacy
+
+These sources are technical references, not permission to copy illustrative values. All reported numbers must come from this paper's actual implementation and data.
+
+For other changes, use the supplied reviewer annotations, correction document, code and data as the authoritative basis. Where external documentation is required, record the source used and distinguish it from the manuscript's own evidence.
+
+---
+
+## PHASE 4 — Implement, rerun and preserve evidence
+
+Work in the following order:
+
+1. Locate and identify the editable source and all relevant experiment/plot scripts.
+2. Build the correction ledger before making changes.
+3. Fix core data, split, training and DP-accounting issues.
+4. Rerun the affected experiments or calculations. Save results and logs.
+5. Regenerate every affected table and figure from the resulting output.
+6. Update the manuscript consistently, including abstract, method, results, discussion, conclusion, captions and limitations.
+7. Check for new inconsistencies introduced by revision.
+8. Regenerate the complete PDF from source.
+9. Visually inspect all 15 pages at realistic publication size.
+10. Independently repeat the audit against the original 32 correction points.
+
+Do not stop after editing a subsection. Once any numerical result changes, search the entire manuscript for every occurrence of that result and update or remove stale instances. Keep a list of changes and their supporting evidence.
+
+---
+
+## PHASE 5 — Mandatory post-edit audit
+
+After all revisions are complete, conduct a **fresh audit**, not a summary of what you intended to do.
+
+For every one of the 32 corrections, record:
+
+- **Correction number and original requirement**
+- **Final status:** Fixed / Partially Fixed / Unresolved
+- **Evidence location:** page, section, equation, table or figure
+- **What actually changed**
+- **Verification method:** code result, calculation, log, source inspection or rendered-PDF inspection
+- **Remaining limitation, if any**
+
+Use “Fixed” only when the actual requirement has been fulfilled and verified. An added sentence that acknowledges an unresolved issue is not the same as implementing the requested correction. A figure regenerated without checking its values is not a verified figure fix. A claimed rerun without logs or reproducible output is not verified.
+
+Also conduct these final cross-checks:
+
+- Compare every numerical value repeated between abstract, tables, plots, captions and conclusion.
+- Verify all plotted results against their underlying data.
+- Check all equations against the corresponding implementation.
+- Confirm the abstract word count is within range.
+- Confirm the split counts sum correctly and match the privacy-accounting assumptions or that any separate DP experiment is clearly documented.
+- Confirm that every privacy claim uses the right mechanism and privacy unit.
+- Check the full rendered PDF for clipping, overlap, missing labels, broken equations and layout defects.
+- Search the final text for unsupported guarantees, stale values, placeholders and contradictions.
+
+**Do not give yourself a pass based on your own change log.** Review the finished source and PDF as if you were an independent reviewer who has not seen the implementation process.
+
+## Final deliverables
+
+Save and clearly identify:
+
+1. The final regenerated paper PDF.
+2. The editable manuscript source.
+3. Modified or newly created preprocessing, analysis and figure-generation scripts.
+4. Relevant rerun logs and machine-readable numerical outputs.
+5. A privacy-accounting report listing the actual inputs, per-client results, assumptions, implementation and verified worst-case bound.
+6. The completed 32-point compliance matrix.
+7. A concise change log showing each implemented correction.
+8. A final blocker list that explicitly identifies anything requiring missing source data, unavailable experiments, external confirmation or author decisions.
+
+### Final acceptance rule
+
+Do not call the manuscript “submission-ready” merely because all 32 rows contain a status.
+
+The result is acceptable only when all fixable corrections are implemented, affected experiments and plots are regenerated where needed, the full PDF is inspected, and the post-edit audit provides evidence of completion. If any critical issue remains, clearly identify it and explain exactly what is missing instead of concealing it with wording.
+
+Begin execution now and complete the full workflow in this run.
+
+/boost
+
+**Additional Context**:
+(1) Relevant context from earlier user messages:
+- The project files are in `c:\dev\papers\papers` and `c:\Users\Smit\Downloads`.
+- Manuscript sources: `c:\Users\Smit\Downloads\final_paper.tex` and `c:\dev\papers\papers\journal_paper.tex`.
+- Compiled PDF target: `c:\Users\Smit\Downloads\final_paper.pdf` and `c:\dev\papers\papers\journal_paper.pdf`.
+- Bibliography file: `c:\Users\Smit\Downloads\references.bib` and `c:\dev\papers\papers\references.bib` (strictly leave references untouched, do not audit bibliography).
+- Figure assets: `c:\Users\Smit\Downloads\figures` and `c:\dev\papers\papers\plots` / `figures`.
+- Python virtual environment: `c:\dev\papers\papers\.venv\Scripts\python.exe`.
+- Tectonic compiler: `c:\dev\papers\papers\tectonic_bin\tectonic.exe`.
+- Codebase modules: `config.py`, `models.py`, `metrics.py`, `fl_framework.py`, `heterogeneity_metrics.py`, `privacy_attacks.py`, `run_journal_experiments.py`, `test_suite.py`, `verify_manuscript.py`, `generate_all_publication_figures.py`.
+- Result files: `results/journal_benchmark_results.csv`, `results/journal_fairness_results.csv`, `results/journal_controlled_heterogeneity_results.csv`, `results/journal_privacy_dlg_results.csv`, `results/journal_tradeoff_matrix.csv`, `results/benchmark_5seeds_summary.csv`.
+- Prior review materials: `c:\dev\papers\reviewer_annotations.txt`, `media_1792496708540_0ccbc87f.pdf`, `media_1792496708496_8eb45ce3.docx`.
+(2) Progress made so far:
+- In prior rounds, the 5-seed benchmark, isolated own-zone baselines, physics baselines (CV, CA), parameter counts, dataset splits, Peachtree outlier diagnostic, figures overhaul, and initial RDP bounds were implemented.
+- Now, perform the exhaustive post-edit verification, audit, and generation of all required final deliverables, logs, and accounting reports as specified in Phases 1–5. Ensure no stone is left unturned.
+</original_task>
+</SYSTEM_MESSAGE>

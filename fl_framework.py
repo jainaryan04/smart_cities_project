@@ -317,6 +317,42 @@ class IsolatedTrainer:
         return self.models, results
 
 
+class CentralizedZoneAwareTrainer:
+    """
+    Trains a Centralized Zone-Aware model with shared backbone and zone-specific heads.
+    Provides a fair comparison against FedPer under matched training budget.
+    """
+    def __init__(self, model_class, client_loaders, scalers, device=DEVICE, lr=LEARNING_RATE):
+        self.device = device
+        self.client_loaders = client_loaders
+        self.scalers = scalers
+        self.lr = lr
+        self.model = model_class().to(device)
+        self.criterion = nn.MSELoss()
+
+    def train(self, epochs=12):
+        optimizer = optim.Adam(self.model.parameters(), lr=self.lr, weight_decay=WEIGHT_DECAY)
+        num_clients = len(self.client_loaders)
+        for ep in range(1, epochs + 1):
+            self.model.train()
+            iterators = [iter(self.client_loaders[cid]['train']) for cid in range(num_clients)]
+            active = list(range(num_clients))
+            while active:
+                for cid in list(active):
+                    try:
+                        batch = next(iterators[cid])
+                        inputs, targets = batch[0].to(self.device), batch[1].to(self.device)
+                        optimizer.zero_grad()
+                        preds = self.model(inputs, zone_id=cid)
+                        loss = self.criterion(preds, targets)
+                        loss.backward()
+                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=5.0)
+                        optimizer.step()
+                    except StopIteration:
+                        active.remove(cid)
+        return self.model
+
+
 # =============================================================
 # Personalized Federated Learning: FedPer & pFedMe
 # =============================================================

@@ -12,18 +12,19 @@ An end-to-end framework for decentralized, privacy-preserving, and personalized 
 
 ## 1. Research Overview & Highlights
 
-Predicting vehicle motion ($\Delta x, \Delta y$) over multi-second horizons ($3.0\,\text{s}$) is vital for collision prevention, adaptive traffic control, and V2X coordination. While canonical Federated Learning (**FedAvg**) coordinates model training across distributed edge nodes without sharing raw telemetry, severe **geographic non-IID data distributions** induce catastrophic client-drift, degraded accuracy, and pronounced spatial unfairness.
+Predicting vehicle motion ($\Delta x, \Delta y$) over multi-second horizons ($3.0\,\text{s}$) is vital for collision prevention, adaptive traffic control, and V2X coordination. While canonical Federated Learning (**FedAvg**) coordinates model training across distributed edge nodes without sharing raw telemetry, marked **geographic non-IID data distributions** induce pronounced client-drift, degraded accuracy, and spatial disparity.
 
 This repository implements the complete codebase, benchmark suite, privacy audit, and publication materials for our journal paper:
 
-* **Formal Non-IID Heterogeneity Quantification**: Quantifies statistical divergence across geographic corridors using Kullback-Leibler (KL) divergence, Jensen-Shannon (JS) divergence, and Wasserstein-1 Earth Mover's Distance (EMD).
+* **Non-IID Heterogeneity Quantification**: Quantifies statistical divergence across geographic corridors using Kullback-Leibler (KL) divergence, Jensen-Shannon (JS) divergence, and Wasserstein-1 Earth Mover's Distance (EMD).
 * **Personalized Federated Learning (PFL)**: Implements **FedPer** (base feature representation sharing with localized output heads) and **pFedMe** (Moreau envelope bi-level optimization) to reconcile collaborative representations with localized driving behaviors.
 * **Privacy Vulnerability & Defense Auditing**: Implements **Deep Leakage from Gradients (DLG)** and Improved DLG (**iDLG**) continuous trajectory reconstruction attacks alongside **Membership Inference Attacks (MIA)**, benchmarking empirical privacy leakage under **Differential Privacy (DP-SGD)** Gaussian perturbation.
 * **Empirical Validation**:
-  * **FedPer** achieves a Global Pooled ADE of **2.951 m** (outperforming Centralized baseline of 3.284 m and standard FedAvg of 3.512 m).
-  * Reduces inter-zone disparity gap from **2.327 m** down to **0.785 m** (&minus;66.3% reduction) and compresses fairness Coefficient of Variation (CoV) from **0.281** to **0.106**.
-  * Delivers **43.1% communication parameter savings** by exchanging only shared representation layers.
-  * Adding DP noise ($\sigma = 1.0$) prevents gradient inversion (reconstruction MSE $\approx 1.25$, cosine similarity $< 0.15$) with minor accuracy impact ($\Delta\text{ADE} \le 0.14\,\text{m}$).
+  * Evaluated across five repeated random seeds (seeds 42--46) on verified contiguous vehicle trajectories with matched 12-round training budgets.
+  * **Global Performance**: Centralized Pooled (**0.835 m** ADE), FedAvg (**0.887 m** ADE), FedPer (**0.930 m** ADE), and FedProx (**0.941 m** ADE) consistently outperform kinematic physics baselines (Constant Velocity: **0.990 m**; Constant Acceleration: **1.329 m**).
+  * **Mitigating Silo Failures**: Isolated edge silos suffer acute performance compounding when encountering foreign corridors (US-101 silo degrades to **5.028 m** on Peachtree downtown traffic, a 5.04-fold error inflation). Collaborative federated learning eliminates cross-corridor collapse while preserving native corridor performance (isolated own-zone baseline: **0.880 m**; paired $t$-test $p=0.2938$ vs. FedPer).
+  * **Communication Efficiency**: FedPer exchanges **36.65 MiB** cumulative volume over 12 rounds by withholding localized projection heads, compared to **37.24 MiB** for FedAvg and **15.26 MiB** for a theoretical one-off 4-feature upload.
+  * **Differential Privacy Defense**: While head withholding alone does not prevent gradient inversion (DLG position error $0.2960\,\text{m}$), calibrated DP-SGD Gaussian noise ($\sigma = 1.0$, $\epsilon = 4.80$, $\delta = 10^{-5}$) robustly degrades inversion (error increases to $5.198\,\text{m}$, exceeding standard $3.7\,\text{m}$ lane width; cosine similarity drops to $0.051$).
 
 ---
 
@@ -58,32 +59,40 @@ This repository implements the complete codebase, benchmark suite, privacy audit
 * **Input Features ($d=4$)**: Normalized $[\Delta x_{rel}, \Delta y_{rel}, v_{vel}, v_{acc}]$ referenced to observation origin $(0, 0)$.
 * **Output Coordinates ($d=2$)**: Future relative displacement vectors $[\Delta x_{pred}, \Delta y_{pred}]$.
 * **Parameter Split (FedPer)**:
-  * **Shared Base ($136.2\,\text{KB}$)**: Input embedding, multi-layer LSTM encoder, and LSTM decoder.
-  * **Personalized Head ($10.4\,\text{KB}$)**: 2-layer MLP projection head retained locally at each RSU.
+  * **Shared Base ($133{,}440$ parameters / $521.25\,\text{KiB}$)**: Input embedding, multi-layer LSTM encoder, and LSTM decoder. Exchanged across edge RSUs.
+  * **Personalized Head ($2{,}146$ parameters / $8.38\,\text{KiB}$)**: 2-layer MLP projection head (`fc_out`) retained strictly on-device at each RSU.
+  * **Total Model ($135{,}586$ parameters / $529.63\,\text{KiB}$)**.
 
 ---
 
 ## 3. Benchmark Results
 
-### 3.1 Overall Model Comparison (12 Rounds, 3.0s Horizon)
+### 3.1 Overall Model Comparison (12 Rounds / Epochs, 3.0s Horizon, 5-Seed Mean ± SD)
 
-| Learning Paradigm | Global Pooled ADE (m) | Global Pooled FDE (m) | Global Pooled RMSE (m) | MAE (m) | MAPE (%) | Worst-Zone ADE (m) | Disparity Gap (m) | Fairness CoV | Uplink / Client / Round |
+| Learning Paradigm | Global Pooled ADE (m) | Global Pooled FDE (m) | Global Pooled RMSE (m) | MAE (m) | MAPE (%) | Worst-Zone ADE (m) | Disparity Gap (m) | Fairness CoV (%) | Comm (MiB) |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Centralized Baseline** | 3.284 | 6.512 | 3.910 | 2.180 | 14.82% | 4.812 | 1.890 | 0.224 | &mdash; (Raw data) |
-| **Isolated Edge Silos** | 4.120 | 8.245 | 4.950 | 2.810 | 19.45% | 5.890 | 2.650 | 0.312 | $0.0\,\text{KB}$ |
-| **FedAvg** | 3.512 | 7.045 | 4.215 | 2.345 | 16.12% | 5.210 | 2.327 | 0.281 | $146.6\,\text{KB}$ |
-| **FedProx** ($\mu=0.01$) | 3.440 | 6.890 | 4.110 | 2.290 | 15.70% | 5.050 | 2.180 | 0.264 | $146.6\,\text{KB}$ |
-| **pFedMe** ($\lambda=15$) | 3.120 | 6.180 | 3.740 | 2.050 | 14.10% | 4.420 | 1.340 | 0.171 | $146.6\,\text{KB}$ |
-| **FedPer (Ours)** | **2.951** | **5.812** | **3.520** | **1.940** | **13.25%** | **3.915** | **0.785** | **0.106** | **$83.4\,\text{KB}$** |
+| **Constant Velocity (CV)** | 0.990 | 2.111 | 1.590 | 0.554 | 17.9% | 1.275 | 0.349 | 14.1% | 0.00 |
+| **Constant Acceleration (CA)** | 1.329 | 3.013 | 2.333 | 0.769 | 30.0% | 1.600 | 0.590 | 18.9% | 0.00 |
+| **Centralized (Pooled, 12 ep)** | 0.835 ± 0.028 | 1.696 | 1.238 | 0.467 | 17.3% | 0.967 | 0.253 | 12.4% | $\le$15.26 |
+| **Centralized (Zone-Aware, 12 ep)** | 0.873 ± 0.055 | 1.727 | 1.267 | 0.485 | 17.9% | 1.049 | 0.324 | 14.9% | $\le$15.26 |
+| **Isolated (Own Zone)** | 0.880 ± 0.048 | 1.750 | 1.308 | 0.488 | 17.7% | 0.998 | 0.278 | 14.0% | 0.00 |
+| **FedAvg (Global FL, 12 rnd)** | 0.887 ± 0.048 | 1.774 | 1.303 | 0.498 | 18.4% | 1.047 | 0.292 | 13.3% | 37.24 |
+| **FedPer (Personalized, 12 rnd)** | 0.930 ± 0.058 | 1.805 | 1.333 | 0.514 | 19.7% | 1.107 | 0.320 | 13.8% | 36.65 |
+| **FedProx ($\mu=0.01$, 12 rnd)** | 0.941 ± 0.068 | 1.868 | 1.337 | 0.526 | 20.1% | 1.073 | 0.271 | 12.1% | 37.24 |
+| **pFedMe (Moreau, 12 rnd)** | 4.612 ± 0.313 | 7.517 | 5.830 | 2.394 | 61.3% | 5.395 | 2.000 | 18.6% | 37.24 |
+| **Isolated (US-101 Silo)** | 3.619 ± 0.123 | 6.630 | 6.400 | 1.872 | 49.7% | 5.028 | 4.030 | 64.0% | 0.00 |
+| **Isolated (Lankershim Silo)** | 1.024 ± 0.071 | 2.097 | 1.577 | 0.575 | 18.9% | 1.217 | 0.498 | 21.1% | 0.00 |
+| **Isolated (Peachtree Silo)** | 0.955 ± 0.076 | 1.870 | 1.378 | 0.535 | 20.3% | 1.182 | 0.295 | 12.2% | 0.00 |
 
-### 3.2 Privacy Auditing under DLG Gradient Inversion
+### 3.2 Privacy Auditing under DLG Gradient Inversion and DP-SGD Defense
 
-| Defense Configuration | Input Reconstruction MSE | Target Reconstruction MSE | Input Cosine Similarity | DLG Attack Feasibility |
-| :--- | :---: | :---: | :---: | :---: |
-| **No Defense ($\sigma = 0.0$)** | 0.0412 | 0.0289 | 0.9412 | **Severe Leakage** (Near-exact recovery) |
-| **DP-SGD ($\sigma = 0.5$)** | 0.4810 | 0.3920 | 0.5120 | Moderate Inversion Resistance |
-| **DP-SGD ($\sigma = 1.0$)** | 1.2540 | 0.9810 | 0.1420 | **Robust Defense** (Inversion Prevented) |
-| **DP-SGD ($\sigma = 2.0$)** | 2.8450 | 2.1200 | 0.0310 | Complete Obfuscation |
+| FL Method | Defense Setting | Noise Multiplier ($\sigma$) | Privacy Budget ($\epsilon$, $\delta=10^{-5}$) | Recon. Pos. Error (m) | Input Cosine Similarity | Vulnerability Status |
+| :--- | :--- | :---: | :---: | :---: | :---: | :--- |
+| **FedAvg** | None (Unprotected Gradients) | 0.0 | $\infty$ | 0.4373 m | 0.3724 | **Vulnerable** (Unprotected gradients) |
+| **FedPer** | Head Withholding (Output Private) | 0.0 | $\infty$ | 0.2960 m | 0.5330 | **Vulnerable** (Backbone exposed) |
+| **FedAvg + DP-SGD** | Gaussian Perturbation ($C=1.0$) | 0.5 | 10.46 | 2.0208 m | 0.5915 | Partially Protected |
+| **FedAvg + DP-SGD** | Gaussian Perturbation ($C=1.0$) | 1.0 | 4.80 | 5.1980 m | 0.0508 | **Robust Defense** (Exceeds $3.7\,\text{m}$ lane width) |
+| **FedAvg + DP-SGD** | Gaussian Perturbation ($C=1.0$) | 2.0 | 2.30 | 9.9000 m | -0.2656 | Coordinate Obfuscation |
 
 ---
 
@@ -106,7 +115,7 @@ smart_cities_project/
 ├── verify_dataset.py                          # Raw dataset verification and integrity script
 ├── verify_manuscript.py                       # Automated verification for LaTeX and Markdown papers
 ├── journal_paper.tex                          # Complete IEEEtran LaTeX source manuscript
-├── references.bib                             # 32 BibTeX references for the journal paper
+├── references.bib                             # 25 BibTeX references for the journal paper
 ├── JOURNAL_PAPER_MANUSCRIPT.md                # Scopus IMRaD full formatted manuscript
 ├── JOURNAL_BENCHMARK_REPORT.md                # Detailed experimental benchmark summary
 ├── plots/                                     # 10 High-resolution (300 DPI) publication figures
@@ -186,7 +195,7 @@ python verify_manuscript.py
 | **Fig 1** | Kinematic distributions (speed, acceleration, coordinates) across US-101, Lankershim, and Peachtree corridors. |
 | **Fig 2** | Training convergence across rounds and epochs for all 6 evaluated learning paradigms. |
 | **Fig 3** | Qualitative trajectory predictions across straight, turn, and stop-and-go maneuvers against ground truth. |
-| **Fig 4** | Cross-domain transfer heatmap demonstrating severe negative transfer under isolated training. |
+| **Fig 4** | Cross-domain transfer heatmap demonstrating pronounced negative transfer under isolated training. |
 | **Fig 5** | Cumulative communication overhead vs test ADE across training rounds. |
 | **Fig 6** | Horizon error growth curves ($t = 0.5\,\text{s}$ to $3.0\,\text{s}$) illustrating error accumulation over time. |
 | **Fig 7** | Model robustness across controlled heterogeneity regimes (Low, Medium, High non-IID). |
@@ -201,8 +210,8 @@ python verify_manuscript.py
 If you utilize this codebase, dataset preprocessing pipeline, or benchmark results in your research, please cite our manuscript:
 
 ```bibtex
-@article{patel2026personalized,
-  author={Patel, Smit},
+@article{trivedi2026personalized,
+  author={Trivedi, Smit Bhavesh and Thaker, Nitya Ajit and Jain, Aryan Ramesh and Kalaavathi, B.},
   title={Personalized Federated Learning Mitigating Geographic Non-IID Disparity for Vehicle Trajectory Prediction in Smart Cities},
   journal={IEEE Transactions on Intelligent Transportation Systems},
   year={2026},

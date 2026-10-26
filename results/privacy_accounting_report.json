@@ -1,0 +1,299 @@
+{
+  "metadata": {
+    "software": {
+      "python": "3.12",
+      "torch": "2.14.1+cpu",
+      "opacus": "1.6.0"
+    },
+    "parameters": {
+      "delta": 1e-05,
+      "rounds": 12,
+      "local_epochs": 1,
+      "batch_size": 128,
+      "clipping_threshold_C": 1.0,
+      "privacy_unit": "individual 3.0-second trajectory observation window (window-level DP)",
+      "adjacency_definition": "two datasets differ by at most one 3.0s trajectory window (6 frames at 2 Hz)",
+      "sampling_mechanism": "mini-batch extraction with random shuffling per epoch (without replacement), modeled under Poisson subsampling amplification"
+    }
+  },
+  "current_split_accounting": {
+    "sigma_0.5": {
+      "noise_multiplier": 0.5,
+      "clients": {
+        "client_0": {
+          "name": "RSU-1: US-101 (Highway)",
+          "train_windows": 1351,
+          "sample_rate_q": 0.094745,
+          "local_steps_T": 132,
+          "opacus_rdp": {
+            "epsilon": 38.7416,
+            "optimal_alpha": 1.5,
+            "delta": 1e-05
+          },
+          "quadratic_approx": {
+            "epsilon": 12.8186,
+            "optimal_alpha": 3.16
+          }
+        },
+        "client_1": {
+          "name": "RSU-2: Lankershim (Arterial)",
+          "train_windows": 7369,
+          "sample_rate_q": 0.01737,
+          "local_steps_T": 696,
+          "opacus_rdp": {
+            "epsilon": 20.6394,
+            "optimal_alpha": 1.9,
+            "delta": 1e-05
+          },
+          "quadratic_approx": {
+            "epsilon": 4.8188,
+            "optimal_alpha": 6.35
+          }
+        },
+        "client_2": {
+          "name": "RSU-3: Peachtree (Downtown)",
+          "train_windows": 11193,
+          "sample_rate_q": 0.011436,
+          "local_steps_T": 1056,
+          "opacus_rdp": {
+            "epsilon": 17.5027,
+            "optimal_alpha": 2.0,
+            "delta": 1e-05
+          },
+          "quadratic_approx": {
+            "epsilon": 3.8437,
+            "optimal_alpha": 7.62
+          }
+        }
+      },
+      "worst_case_client": "Client 0 (RSU-1: US-101 (Highway))",
+      "worst_case_epsilon": 38.7416,
+      "per_client_range": "17.5 - 38.74"
+    },
+    "sigma_1.0": {
+      "noise_multiplier": 1.0,
+      "clients": {
+        "client_0": {
+          "name": "RSU-1: US-101 (Highway)",
+          "train_windows": 1351,
+          "sample_rate_q": 0.094745,
+          "local_steps_T": 132,
+          "opacus_rdp": {
+            "epsilon": 8.5053,
+            "optimal_alpha": 3.1,
+            "delta": 1e-05
+          },
+          "quadratic_approx": {
+            "epsilon": 5.8272,
+            "optimal_alpha": 5.71
+          }
+        },
+        "client_1": {
+          "name": "RSU-2: Lankershim (Arterial)",
+          "train_windows": 7369,
+          "sample_rate_q": 0.01737,
+          "local_steps_T": 696,
+          "opacus_rdp": {
+            "epsilon": 3.1434,
+            "optimal_alpha": 6.0,
+            "delta": 1e-05
+          },
+          "quadratic_approx": {
+            "epsilon": 2.304,
+            "optimal_alpha": 11.44
+          }
+        },
+        "client_2": {
+          "name": "RSU-3: Peachtree (Downtown)",
+          "train_windows": 11193,
+          "sample_rate_q": 0.011436,
+          "local_steps_T": 1056,
+          "opacus_rdp": {
+            "epsilon": 2.4565,
+            "optimal_alpha": 7.2,
+            "delta": 1e-05
+          },
+          "quadratic_approx": {
+            "epsilon": 1.8523,
+            "optimal_alpha": 13.99
+          }
+        }
+      },
+      "worst_case_client": "Client 0 (RSU-1: US-101 (Highway))",
+      "worst_case_epsilon": 8.5053,
+      "per_client_range": "2.46 - 8.51"
+    },
+    "sigma_2.0": {
+      "noise_multiplier": 2.0,
+      "clients": {
+        "client_0": {
+          "name": "RSU-1: US-101 (Highway)",
+          "train_windows": 1351,
+          "sample_rate_q": 0.094745,
+          "local_steps_T": 132,
+          "opacus_rdp": {
+            "epsilon": 2.7987,
+            "optimal_alpha": 7.2,
+            "delta": 1e-05
+          },
+          "quadratic_approx": {
+            "epsilon": 2.7612,
+            "optimal_alpha": 9.53
+          }
+        },
+        "client_1": {
+          "name": "RSU-2: Lankershim (Arterial)",
+          "train_windows": 7369,
+          "sample_rate_q": 0.01737,
+          "local_steps_T": 696,
+          "opacus_rdp": {
+            "epsilon": 1.0342,
+            "optimal_alpha": 17.0,
+            "delta": 1e-05
+          },
+          "quadratic_approx": {
+            "epsilon": 1.1258,
+            "optimal_alpha": 21.63
+          }
+        },
+        "client_2": {
+          "name": "RSU-3: Peachtree (Downtown)",
+          "train_windows": 11193,
+          "sample_rate_q": 0.011436,
+          "local_steps_T": 1056,
+          "opacus_rdp": {
+            "epsilon": 0.8164,
+            "optimal_alpha": 20.0,
+            "delta": 1e-05
+          },
+          "quadratic_approx": {
+            "epsilon": 0.9089,
+            "optimal_alpha": 26.73
+          }
+        }
+      },
+      "worst_case_client": "Client 0 (RSU-1: US-101 (Highway))",
+      "worst_case_epsilon": 2.7987,
+      "per_client_range": "0.82 - 2.8"
+    }
+  },
+  "historical_reconciliation": {
+    "sigma_0.5": {
+      "noise_multiplier": 0.5,
+      "clients": {
+        "client_0": {
+          "name": "RSU-1: US-101",
+          "train_windows": 1430,
+          "sample_rate_q": 0.08951,
+          "local_steps_T": 132,
+          "opacus_rdp_epsilon": 36.9583,
+          "quadratic_approx_epsilon": 12.0138
+        },
+        "client_1": {
+          "name": "RSU-2: Lankershim",
+          "train_windows": 6094,
+          "sample_rate_q": 0.021004,
+          "local_steps_T": 564,
+          "opacus_rdp_epsilon": 21.9538,
+          "quadratic_approx_epsilon": 5.286
+        },
+        "client_2": {
+          "name": "RSU-3: Peachtree",
+          "train_windows": 7364,
+          "sample_rate_q": 0.017382,
+          "local_steps_T": 684,
+          "opacus_rdp_epsilon": 20.491,
+          "quadratic_approx_epsilon": 4.7764
+        }
+      }
+    },
+    "sigma_1.0": {
+      "noise_multiplier": 1.0,
+      "clients": {
+        "client_0": {
+          "name": "RSU-1: US-101",
+          "train_windows": 1430,
+          "sample_rate_q": 0.08951,
+          "local_steps_T": 132,
+          "opacus_rdp_epsilon": 8.0281,
+          "quadratic_approx_epsilon": 5.4638
+        },
+        "client_1": {
+          "name": "RSU-2: Lankershim",
+          "train_windows": 6094,
+          "sample_rate_q": 0.021004,
+          "local_steps_T": 564,
+          "opacus_rdp_epsilon": 3.4852,
+          "quadratic_approx_epsilon": 2.5185
+        },
+        "client_2": {
+          "name": "RSU-3: Peachtree",
+          "train_windows": 7364,
+          "sample_rate_q": 0.017382,
+          "local_steps_T": 684,
+          "opacus_rdp_epsilon": 3.1213,
+          "quadratic_approx_epsilon": 2.2848
+        }
+      }
+    },
+    "sigma_2.0": {
+      "noise_multiplier": 2.0,
+      "clients": {
+        "client_0": {
+          "name": "RSU-1: US-101",
+          "train_windows": 1430,
+          "sample_rate_q": 0.08951,
+          "local_steps_T": 132,
+          "opacus_rdp_epsilon": 2.6305,
+          "quadratic_approx_epsilon": 2.6
+        },
+        "client_1": {
+          "name": "RSU-2: Lankershim",
+          "train_windows": 6094,
+          "sample_rate_q": 0.021004,
+          "local_steps_T": 564,
+          "opacus_rdp_epsilon": 1.1397,
+          "quadratic_approx_epsilon": 1.2279
+        },
+        "client_2": {
+          "name": "RSU-3: Peachtree",
+          "train_windows": 7364,
+          "sample_rate_q": 0.017382,
+          "local_steps_T": 684,
+          "opacus_rdp_epsilon": 1.0254,
+          "quadratic_approx_epsilon": 1.1166
+        }
+      }
+    }
+  },
+  "summary": {
+    "verified_bounds_current_split": {
+      "sigma_0.5": {
+        "worst_case_eps": 38.7416,
+        "range": "17.5 - 38.74"
+      },
+      "sigma_1.0": {
+        "worst_case_eps": 8.5053,
+        "range": "2.46 - 8.51"
+      },
+      "sigma_2.0": {
+        "worst_case_eps": 2.7987,
+        "range": "0.82 - 2.8"
+      }
+    },
+    "historical_provisional_claims": {
+      "sigma_0.5": {
+        "claimed_eps": 12.01,
+        "basis": "quadratic Taylor approximation on historical split (N0=1430, q=0.0895, T=132)"
+      },
+      "sigma_1.0": {
+        "claimed_eps": 5.46,
+        "basis": "quadratic Taylor approximation on historical split (N0=1430, q=0.0895, T=132)"
+      },
+      "sigma_2.0": {
+        "claimed_eps": 2.6,
+        "basis": "quadratic Taylor approximation on historical split (N0=1430, q=0.0895, T=132)"
+      }
+    }
+  }
+}

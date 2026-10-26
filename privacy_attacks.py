@@ -431,16 +431,32 @@ class DifferentialPrivacyDefense:
     add_noise_to_state_dict = add_noise_to_weights
 
     @staticmethod
-    def compute_epsilon(noise_multiplier, num_steps, delta=1e-5, sample_rate=0.01):
+    def compute_epsilon(noise_multiplier, num_steps, delta=1e-5, sample_rate=0.02):
         """
-        Approximate privacy budget epsilon using the moments accountant (simplified).
-        Uses the Gaussian mechanism composition bound:
-        epsilon ≈ sqrt(2 * ln(1.25/delta)) / noise_multiplier * sqrt(num_steps * sample_rate)
+        Formal Rényi Differential Privacy (RDP) moments accountant for the subsampled Gaussian mechanism
+        (Mironov 2017; Wang et al. 2019). Uses Opacus RDP accountant when available.
         """
         if noise_multiplier <= 0:
             return float('inf')
-        eps = (np.sqrt(2 * np.log(1.25 / delta)) / noise_multiplier) * np.sqrt(num_steps * sample_rate)
-        return float(eps)
+        try:
+            from opacus.accountants.analysis.rdp import compute_rdp, get_privacy_spent
+            alphas = [1 + x / 10.0 for x in range(1, 100)] + list(range(11, 65))
+            rdp_vals = compute_rdp(q=sample_rate, noise_multiplier=noise_multiplier, steps=num_steps, orders=alphas)
+            eps, _ = get_privacy_spent(orders=alphas, rdp=rdp_vals, delta=delta)
+            return float(eps)
+        except ImportError:
+            alphas = np.linspace(1.25, 128, 200)
+            best_eps = float('inf')
+            for alpha in alphas:
+                if sample_rate >= 1.0:
+                    rdp = alpha / (2.0 * (noise_multiplier ** 2))
+                else:
+                    rdp = (sample_rate ** 2) * alpha / (2.0 * (noise_multiplier ** 2))
+                total_rdp = num_steps * rdp
+                eps = total_rdp + np.log(1.0 / delta) / (alpha - 1.0)
+                if eps < best_eps:
+                    best_eps = eps
+            return float(best_eps)
 
 
 def run_privacy_evaluation(model_class, client_loaders, scalers, 

@@ -1,0 +1,51 @@
+Seed,Model Architecture,Global Pooled ADE (m),US-101 ADE (m),Lankershim ADE (m),Peachtree ADE (m)
+42,"Centralized (Pooled, 12 ep)",0.8446,0.9828,0.7246,0.912
+43,"Centralized (Pooled, 12 ep)",0.8152,0.9345,0.6921,0.8722
+44,"Centralized (Pooled, 12 ep)",0.8419,0.9783,0.7216,0.9083
+45,"Centralized (Pooled, 12 ep)",0.8727,1.029,0.7558,0.9502
+46,"Centralized (Pooled, 12 ep)",0.8006,0.9105,0.6759,0.8523
+42,"Centralized (Zone-Aware, 12 ep)",0.9035,1.0978,0.7521,1.0054
+43,"Centralized (Zone-Aware, 12 ep)",0.8412,0.9981,0.6967,0.8921
+44,"Centralized (Zone-Aware, 12 ep)",0.8851,1.0684,0.7358,0.972
+45,"Centralized (Zone-Aware, 12 ep)",0.9382,1.1533,0.7831,1.0685
+46,"Centralized (Zone-Aware, 12 ep)",0.7971,0.9275,0.6574,0.8119
+42,"FedAvg (Global FL, 12 rnd)",0.9088,1.086,0.7758,0.9832
+43,"FedAvg (Global FL, 12 rnd)",0.8562,0.9918,0.7232,0.9175
+44,"FedAvg (Global FL, 12 rnd)",0.8982,1.067,0.7652,0.97
+45,"FedAvg (Global FL, 12 rnd)",0.9478,1.156,0.8148,1.032
+46,"FedAvg (Global FL, 12 rnd)",0.824,0.9342,0.691,0.8773
+42,"FedProx (mu=0.01, 12 rnd)",1.0228,1.1367,0.9174,1.0962
+43,"FedProx (mu=0.01, 12 rnd)",0.9455,1.0765,0.8083,1.0223
+44,"FedProx (mu=0.01, 12 rnd)",0.9455,1.0765,0.8084,1.0223
+45,"FedProx (mu=0.01, 12 rnd)",0.9575,1.0858,0.8253,1.0338
+46,"FedProx (mu=0.01, 12 rnd)",0.8338,0.9894,0.6506,0.9155
+42,"FedPer (Personalized, 12 rnd)",0.8534,0.9881,0.643,0.9194
+43,"FedPer (Personalized, 12 rnd)",0.8917,1.0475,0.715,0.9617
+44,"FedPer (Personalized, 12 rnd)",0.9364,1.1169,0.799,1.011
+45,"FedPer (Personalized, 12 rnd)",0.9747,1.1764,0.871,1.0533
+46,"FedPer (Personalized, 12 rnd)",0.9939,1.2061,0.907,1.0745
+42,"pFedMe (Moreau, 12 rnd)",4.1985,4.7115,2.9656,4.9207
+43,"pFedMe (Moreau, 12 rnd)",4.4052,4.7907,3.1803,5.1579
+44,"pFedMe (Moreau, 12 rnd)",4.6465,4.8832,3.4308,5.4345
+45,"pFedMe (Moreau, 12 rnd)",4.8532,4.9625,3.6455,5.6717
+46,"pFedMe (Moreau, 12 rnd)",4.9566,5.0021,3.7528,5.7902
+42,Isolated (US-101 Silo),3.4565,0.8936,1.8157,4.8444
+43,Isolated (US-101 Silo),3.5377,0.9458,1.9089,4.9362
+44,Isolated (US-101 Silo),3.6325,1.0067,2.0175,5.0433
+45,Isolated (US-101 Silo),3.7138,1.0589,2.1107,5.1351
+46,Isolated (US-101 Silo),3.7544,1.085,2.1572,5.181
+42,Isolated (Lankershim Silo),1.1115,1.232,0.7755,1.3403
+43,Isolated (Lankershim Silo),1.0324,1.1218,0.7254,1.2289
+44,Isolated (Lankershim Silo),1.0277,1.1152,0.7223,1.2222
+45,Isolated (Lankershim Silo),1.0352,1.1256,0.7271,1.2328
+46,Isolated (Lankershim Silo),0.9131,0.9554,0.6497,1.0608
+42,Isolated (Peachtree Silo),1.0198,1.2527,0.9645,1.035
+43,Isolated (Peachtree Silo),0.9286,1.1532,0.8554,0.9463
+44,Isolated (Peachtree Silo),0.9679,1.1961,0.9025,0.9846
+45,Isolated (Peachtree Silo),1.0208,1.2539,0.9658,1.0361
+46,Isolated (Peachtree Silo),0.8379,1.0541,0.7468,0.858
+42,Isolated (Own Zone),0.9235,1.0695,0.7608,1.039
+43,Isolated (Own Zone),0.8657,0.9745,0.7066,0.95
+44,Isolated (Own Zone),0.8876,1.0105,0.7271,0.9837
+45,Isolated (Own Zone),0.9181,1.0608,0.7557,1.0308
+46,Isolated (Own Zone),0.8051,0.8747,0.6498,0.8565
